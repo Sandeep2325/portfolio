@@ -19,7 +19,8 @@ function isTerminal(link: { href: string }) {
   return link.href === "/terminal";
 }
 
-function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+function MobileSidebar({ open, onClose, unlocked }: { open: boolean; onClose: () => void; unlocked: boolean }) {
+  console.log("MobileSidebar unlocked:", unlocked);
   return (
     <>
       <div
@@ -45,16 +46,32 @@ function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }
           <span className="text-xs text-[#58a6ff]">@ Bengaluru, India</span>
         </div>
         <nav className="flex flex-col gap-1 mt-4">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="px-3 py-2 rounded font-medium text-[#c9d1d9] hover:bg-[#21262d] hover:text-[#58a6ff] transition border border-transparent hover:border-[#30363d]"
-              onClick={onClose}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            const disabled = !unlocked && !isTerminal(link);
+            return disabled ? (
+              <span
+                key={link.href}
+                className="px-3 py-2 rounded font-medium bg-[#23272e] cursor-not-allowed select-none block flex items-center gap-2"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(new Event("sidebarUnlockAttempt"));
+                  }
+                }}
+              >
+                <FaLock className="text-[#8b949e]" />
+                {link.label}
+              </span>
+            ) : (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="px-3 py-2 rounded font-medium text-[#c9d1d9] hover:bg-[#21262d] hover:text-[#58a6ff] transition border border-transparent hover:border-[#30363d]"
+                onClick={onClose}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
         <div className="mt-10 text-xs text-[#8b949e] leading-relaxed">
           <span className="block mb-2">Experienced in React, TypeScript, Django, Next.js, Cloud.</span>
@@ -143,7 +160,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           &#9776;
         </button>
       </header>
-      <MobileSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <MobileSidebar key={unlocked ? 'unlocked' : 'locked'} open={sidebarOpen} onClose={() => setSidebarOpen(false)} unlocked={unlocked} />
       {/* Main Content */}
       <main className="flex-1 ml-0 md:ml-72 min-h-screen flex flex-col items-center justify-center px-2 sm:px-4 py-8 bg-[#0d1117]">
         <div className="w-full max-w-3xl mx-auto py-8 card mt-16 md:mt-0">{children}</div>

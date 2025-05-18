@@ -89,6 +89,8 @@ export default function TerminalPage() {
           if (typeof window !== "undefined") {
             sessionStorage.setItem("unlocked", "true");
             window.dispatchEvent(new Event("unlockSidebar"));
+            document.cookie = "sidebarUnlocked=true; path=/; SameSite=Lax";
+            window.location.reload();
           }
           setHistory((h) => [...h, "Sidebar unlocked! Navigation options are now available."]);
         }, 5000);

@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { FaLock } from "react-icons/fa";
+import { useRouter, usePathname } from "next/navigation";
 
 const navLinks = [
   { href: "/", label: "Overview" },
@@ -68,16 +69,21 @@ function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }
 export default function SidebarShell({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setUnlocked(sessionStorage.getItem("unlocked") === "true");
-      window.addEventListener("unlockSidebar", () => {
-        setUnlocked(true);
-        sessionStorage.setItem("unlocked", "true");
-      });
+    function checkUnlock() {
+      const isUnlocked = document.cookie.includes("sidebarUnlocked=true");
+      setUnlocked(isUnlocked);
+      if (!isUnlocked && pathname !== "/terminal") {
+        router.replace("/terminal");
+      }
     }
-  }, []);
+    checkUnlock();
+    window.addEventListener("unlockSidebar", checkUnlock);
+    return () => window.removeEventListener("unlockSidebar", checkUnlock);
+  }, [pathname, router]);
 
   return (
     <div className="flex min-h-screen">

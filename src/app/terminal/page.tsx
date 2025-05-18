@@ -115,6 +115,10 @@ export default function TerminalPage() {
       }
       return;
     }
+    if (key === "ls") {
+      setHistory((h) => [...h, `${PROMPT} ${cmd}`, COMMANDS.help]);
+      return;
+    }
     if (COMMANDS[key as keyof typeof COMMANDS]) {
       setHistory((h) => [...h, `${PROMPT} ${cmd}`, COMMANDS[key as keyof typeof COMMANDS]]);
     } else if (key) {

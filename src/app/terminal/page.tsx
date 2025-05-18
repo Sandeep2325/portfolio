@@ -37,7 +37,7 @@ const DARK_THEME = {
 export default function TerminalPage() {
   const [history, setHistory] = useState<string[]>(["Type 'readme' to see all available commands."]);
   const [input, setInput] = useState("");
-  const [showCursor, setShowCursor] = useState(true);
+//   const [showCursor, setShowCursor] = useState(true);
   const [unlockCount, setUnlockCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState("dark");
@@ -54,10 +54,10 @@ export default function TerminalPage() {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [history, loading]);
 
-  useEffect(() => {
-    const blink = setInterval(() => setShowCursor((c) => !c), 500);
-    return () => clearInterval(blink);
-  }, []);
+//   useEffect(() => {
+//     const blink = setInterval(() => setShowCursor((c) => !c), 500);
+//     return () => clearInterval(blink);
+//   }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -193,7 +193,7 @@ export default function TerminalPage() {
           autoComplete="off"
           disabled={loading}
         />
-        {showCursor && !loading && <span className="font-mono ml-1" style={{ color: colors.accent }}>_</span>}
+        {/* {showCursor && !loading && <span className="font-mono ml-1" style={{ color: colors.accent }}>_</span>} */}
       </form>
     </div>
   );

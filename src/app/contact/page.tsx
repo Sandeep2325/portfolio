@@ -2,7 +2,7 @@ import { FaEnvelope, FaPhone, FaGithub, FaLinkedin } from "react-icons/fa";
 
 const contacts = [
   { icon: <FaEnvelope />, label: "Email", value: "sandeepgowda2314@gmail.com", href: "mailto:sandeepgowda2314@gmail.com" },
-  { icon: <FaPhone />, label: "Phone", value: "8105486993", href: "tel:8105486993" },
+  { icon: <FaPhone />, label: "Phone", value: "+91 8105486993", href: "tel:+918105486993" },
   { icon: <FaGithub />, label: "GitHub", value: "Sandeep2325", href: "https://github.com/Sandeep2325" },
   { icon: <FaLinkedin />, label: "LinkedIn", value: "sandeep-gowda-cc-54a117223", href: "https://www.linkedin.com/in/sandeep-gowda-cc-54a117223/" },
 ];

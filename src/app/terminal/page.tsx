@@ -9,7 +9,7 @@ const COMMANDS = {
   skills: `Skills:\n- React, TypeScript, Next.js, Redux\n- Django, FastAPI, Python\n- MySQL, PostgreSQL, MongoDB\n- AWS EC2, DevOps\n- Unity, Godot, Game Dev`,
   experience: `Experience:\n- Getafix Technologies (QuickAds): Full-Stack Developer\n- Innovya Technologies: Software Developer\n- Nexevo Technologies: Python Developer`,
   projects: `Projects:\n- QuickAds Video Ad Platform\n- VR Video Player for Oculus & PICO\n- Medical E-commerce Platform\n- Insurance Brokerage Application\n- B2B E-commerce Website`,
-  contact: `Email: sandeepgowda2314@gmail.com\nPhone: 8105486993`,
+  contact: `Email: sandeepgowda2314@gmail.com\nPhone: +91 8105486993`,
   github: `https://github.com/Sandeep2325`,
   linkedin: `https://www.linkedin.com/in/sandeep-gowda-cc-54a117223/`,
   theme: `Sorry, only dark mode is supported!`,
@@ -74,7 +74,7 @@ export default function TerminalPage() {
 
   function handleCommand(cmd: string) {
     if (cmd === "clear") {
-      setHistory([]);
+      setHistory(["Type 'readme' to see all available commands."]);
       return;
     }
     const key = cmd.trim().toLowerCase();

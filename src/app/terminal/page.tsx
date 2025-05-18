@@ -3,7 +3,7 @@ import { useRef, useState, useEffect } from "react";
 
 const COMMANDS = {
   help: `Available commands:\n- help\n- readme\n- bio\n- skills\n- experience\n- projects\n- contact\n- github\n- linkedin\n- about\n- theme\n- clear\n- hi to sandeep`,
-  readme: `Available commands:\n- help\n- readme\n- bio\n- skills\n- experience\n- projects\n- contact\n- github\n- linkedin\n- about\n- theme\n- clear\n- hi to sandeep`,
+  readme: `Available commands:\n- help\n- readme\n- bio\n- skills\n- experience\n- projects\n- contact\n- github\n- linkedin\n- about\n- theme\n- clear\n- hi to sandeep\n- theme light\n- theme dark`,
   bio: `Sandeep Gowda is a Software Developer based in Bengaluru, India. Experienced in React, TypeScript, Django, Next.js, and Cloud.`,
   about: `I build robust, scalable, and interactive applications. Passionate about clean code and user experience.`,
   skills: `Skills:\n- React, TypeScript, Next.js, Redux\n- Django, FastAPI, Python\n- MySQL, PostgreSQL, MongoDB\n- AWS EC2, DevOps\n- Unity, Godot, Game Dev`,
@@ -17,12 +17,30 @@ const COMMANDS = {
 
 const PROMPT = "sandeep@portfolio:~$";
 
+const LIGHT_THEME = {
+  background: "#f5f5f5",
+  card: "#fff",
+  prompt: "#22863a",
+  text: "#24292e",
+  accent: "#0969da",
+  inputBg: "#eaeaea",
+};
+const DARK_THEME = {
+  background: "#10131a",
+  card: "#161b22",
+  prompt: "#238636",
+  text: "#c9d1d9",
+  accent: "#58a6ff",
+  inputBg: "#161b22",
+};
+
 export default function TerminalPage() {
   const [history, setHistory] = useState<string[]>(["Type 'readme' to see all available commands."]);
   const [input, setInput] = useState("");
   const [showCursor, setShowCursor] = useState(true);
   const [unlockCount, setUnlockCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState("dark");
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -49,6 +67,11 @@ export default function TerminalPage() {
     }
   }, []);
 
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("terminalTheme") : null;
+    if (stored === "light" || stored === "dark") setTheme(stored);
+  }, []);
+
   function handleCommand(cmd: string) {
     if (cmd === "clear") {
       setHistory([]);
@@ -73,6 +96,21 @@ export default function TerminalPage() {
       }
       return;
     }
+    if (key.startsWith("theme")) {
+      const arg = key.split(" ")[1];
+      if (arg === "light") {
+        setTheme("light");
+        if (typeof window !== "undefined") localStorage.setItem("terminalTheme", "light");
+        setHistory((h) => [...h, `${PROMPT} ${cmd}`, "Switched to light theme."]);
+      } else if (arg === "dark") {
+        setTheme("dark");
+        if (typeof window !== "undefined") localStorage.setItem("terminalTheme", "dark");
+        setHistory((h) => [...h, `${PROMPT} ${cmd}`, "Switched to dark theme."]);
+      } else {
+        setHistory((h) => [...h, `${PROMPT} ${cmd}`, "Usage: theme [light|dark]"]);
+      }
+      return;
+    }
     if (COMMANDS[key as keyof typeof COMMANDS]) {
       setHistory((h) => [...h, `${PROMPT} ${cmd}`, COMMANDS[key as keyof typeof COMMANDS]]);
     } else if (key) {
@@ -88,27 +126,33 @@ export default function TerminalPage() {
     }
   }
 
+  const colors = theme === "light" ? LIGHT_THEME : DARK_THEME;
+
   return (
-    <div className="w-full h-[70vh] max-w-2xl mx-auto mt-8 card p-0 overflow-hidden flex flex-col" style={{background:'#10131a'}}>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 text-[#58a6ff] font-mono text-base" style={{background:'#10131a'}}>
+    <div className="w-full h-[70vh] max-w-2xl mx-auto mt-8 card p-0 overflow-hidden flex flex-col" style={{ background: colors.background }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 font-mono text-base" style={{ background: colors.background, color: colors.text }}>
         {history.map((line, i) => (
-          <div key={i} className={line.startsWith(PROMPT) ? "text-[#238636]" : "text-[#c9d1d9] whitespace-pre-line"}>{line}</div>
+          <div key={i} style={line.startsWith(PROMPT)
+            ? { color: colors.prompt }
+            : { color: colors.text, whiteSpace: "pre-line" }
+          }>{line}</div>
         ))}
         {loading && (
-          <div className="text-[#c9d1d9] whitespace-pre-line">reading your mind... <span className="animate-blink text-[#58a6ff]">_</span></div>
+          <div style={{ color: colors.text, whiteSpace: "pre-line" }}>reading your mind... <span className="animate-blink" style={{ color: colors.accent }}>_</span></div>
         )}
       </div>
-      <form onSubmit={onSubmit} className="flex items-center px-4 py-3 border-t border-[#30363d] bg-[#161b22]">
-        <span className="text-[#238636] font-mono mr-2">{PROMPT}</span>
+      <form onSubmit={onSubmit} className="flex items-center px-4 py-3 border-t" style={{ borderColor: colors.prompt, background: colors.inputBg }}>
+        <span className="font-mono mr-2" style={{ color: colors.prompt }}>{PROMPT}</span>
         <input
           ref={inputRef}
-          className="flex-1 bg-transparent outline-none border-none text-[#c9d1d9] font-mono text-base"
+          className="flex-1 bg-transparent outline-none border-none font-mono text-base"
+          style={{ color: colors.text }}
           value={input}
           onChange={e => setInput(e.target.value)}
           autoComplete="off"
           disabled={loading}
         />
-        {showCursor && !loading && <span className="text-[#58a6ff] font-mono ml-1">_</span>}
+        {showCursor && !loading && <span className="font-mono ml-1" style={{ color: colors.accent }}>_</span>}
       </form>
     </div>
   );

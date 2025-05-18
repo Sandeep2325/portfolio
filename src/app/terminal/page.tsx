@@ -41,6 +41,8 @@ export default function TerminalPage() {
   const [unlockCount, setUnlockCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState("dark");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -121,8 +123,37 @@ export default function TerminalPage() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!loading) {
+      if (input.trim()) {
+        setCommandHistory((h) => [...h, input]);
+      }
       handleCommand(input);
       setInput("");
+      setHistoryIndex(null);
+    }
+  }
+
+  function onInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (commandHistory.length === 0) return;
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHistoryIndex((idx) => {
+        const newIdx = idx === null ? commandHistory.length - 1 : Math.max(0, idx - 1);
+        setInput(commandHistory[newIdx] || "");
+        return newIdx;
+      });
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHistoryIndex((idx) => {
+        if (idx === null) return null;
+        const newIdx = idx + 1;
+        if (newIdx >= commandHistory.length) {
+          setInput("");
+          return null;
+        } else {
+          setInput(commandHistory[newIdx] || "");
+          return newIdx;
+        }
+      });
     }
   }
 
@@ -147,8 +178,12 @@ export default function TerminalPage() {
           ref={inputRef}
           className="flex-1 bg-transparent outline-none border-none font-mono text-base"
           style={{ color: colors.text }}
-          value={input}
-          onChange={e => setInput(e.target.value)}
+          value={historyIndex !== null ? commandHistory[historyIndex] ?? "" : input}
+          onChange={e => {
+            setInput(e.target.value);
+            setHistoryIndex(null);
+          }}
+          onKeyDown={onInputKeyDown}
           autoComplete="off"
           disabled={loading}
         />

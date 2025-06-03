@@ -6,7 +6,7 @@ const blogPosts = [
     slug: 'ai-in-development',
     title: 'Leveraging AI in Modern Software Development',
     excerpt: 'Discover how AI tools are transforming the development workflow and boosting productivity in the fast-paced tech industry.',
-    date: 'March 15, 2024',
+    // date: 'March 15, 2024',
     readTime: '8 min read',
     category: 'Development',
     image: '/blog/ai-development.jpg'
@@ -15,7 +15,7 @@ const blogPosts = [
     slug: 'create-react-app-deprecated',
     title: 'Why Create React App is Being Deprecated',
     excerpt: 'Understanding the reasons behind Create React App\'s deprecation and exploring modern alternatives for React development.',
-    date: 'March 16, 2024',
+    // date: 'March 16, 2024',
     readTime: '6 min read',
     category: 'React',
     image: '/blog/cra-deprecated.png'
@@ -47,7 +47,7 @@ export default function BlogPage() {
               <div className="p-6">
                 <div className="flex items-center gap-4 mb-3">
                   <span className="px-3 py-1 text-sm text-blue-400 bg-blue-400/10 rounded-full">{post.category}</span>
-                  <span className="text-sm text-gray-400">{post.date}</span>
+                  {/* <span className="text-sm text-gray-400">{post.date}</span> */}
                 </div>
                 <h2 className="text-xl font-semibold text-[#b5e0ff] mb-2 group-hover:text-blue-400 transition-colors line-clamp-2">
                   {post.title}

@@ -124,7 +124,11 @@ const blogPosts = {
   }
 };
 
-export default function BlogPost({ params }: { params: { slug: string } }) {
+type PageProps = {
+  params: { slug: string }
+};
+
+export default function BlogPost({ params }: PageProps) {
   const post = blogPosts[params.slug as keyof typeof blogPosts];
   
   if (!post) {

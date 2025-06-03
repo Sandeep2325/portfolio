@@ -1,3 +1,4 @@
+import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { FaArrowLeft } from 'react-icons/fa';
@@ -124,11 +125,7 @@ const blogPosts = {
   }
 };
 
-type PageProps = {
-  params: { slug: string }
-};
-
-export default function BlogPost({ params }: PageProps) {
+export default async function BlogPost({ params }: { params: { slug: string } }): Promise<React.JSX.Element> {
   const post = blogPosts[params.slug as keyof typeof blogPosts];
   
   if (!post) {

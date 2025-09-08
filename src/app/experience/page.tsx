@@ -20,7 +20,7 @@ const experiences = [
     role: "Software Developer",
     dates: "Apr 2024 - July 2025",
     details: [
-      "Developed and maintained the QuickAds video ad platform using React, TypeScript, Next.js, and FastAPI.",
+      "Developed and maintained the ad platform using React, TypeScript, Next.js, and FastAPI.",
       "Managed AWS EC2 infrastructure for seamless deployment.",
       "Integrated third-party APIs to enhance automation and ad functionalities.",
       "Worked on the backend of the application using FastAPI and PostgreSQL.",

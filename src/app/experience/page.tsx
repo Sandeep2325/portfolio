@@ -1,12 +1,34 @@
 const experiences = [
   {
-    company: "Getafix Technologies (QuickAds, Bengaluru)",
-    role: "Full-Stack Developer",
-    dates: "Apr 2024 - Present",
+    company: "QuickAds",
+    role: "Software Developer",
+    dates: "Apr 2024 - July 2025",
     details: [
-      "Led complete video ad creation from design to deployment using React, TypeScript, Next.js, FastAPI.",
+      "Developed and maintained the QuickAds video ad platform using React, TypeScript, Next.js, and FastAPI.",
       "Managed AWS EC2 infrastructure for seamless deployment.",
       "Integrated third-party APIs to enhance automation and ad functionalities.",
+      "Worked on the backend of the application using FastAPI and PostgreSQL.",
+      "Worked on the frontend of the application using React and TypeScript.",
+      "Worked on the deployment of the application using AWS EC2.",
+      "Worked on the integration of the application with third-party APIs.",
+      "Worked on the automation of the application.",
+      "Worked on the optimization of the application.",
+    ],
+  },
+  {
+    company: "Getafix Technologies",
+    role: "Software Developer",
+    dates: "Apr 2024 - July 2025",
+    details: [
+      "Developed and maintained the QuickAds video ad platform using React, TypeScript, Next.js, and FastAPI.",
+      "Managed AWS EC2 infrastructure for seamless deployment.",
+      "Integrated third-party APIs to enhance automation and ad functionalities.",
+      "Worked on the backend of the application using FastAPI and PostgreSQL.",
+      "Worked on the frontend of the application using React and TypeScript.",
+      "Worked on the deployment of the application using AWS EC2.",
+      "Worked on the integration of the application with third-party APIs.",
+      "Worked on the automation of the application.",
+      "Worked on the optimization of the application.",
     ],
   },
   {

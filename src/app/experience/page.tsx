@@ -2,7 +2,7 @@ const experiences = [
   {
     company: "QuickAds",
     role: "Software Developer",
-    dates: "Apr 2024 - July 2025",
+    dates: "June 2025 - Present",
     details: [
       "Developed and maintained the QuickAds video ad platform using React, TypeScript, Next.js, and FastAPI.",
       "Managed AWS EC2 infrastructure for seamless deployment.",

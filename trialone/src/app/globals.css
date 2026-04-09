@@ -1,0 +1,391 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f8efe5;
+  --bg-deep: #efe2d4;
+  --surface: rgba(255, 249, 242, 0.82);
+  --surface-strong: rgba(255, 244, 233, 0.96);
+  --surface-border: rgba(120, 64, 28, 0.12);
+  --text: #23160e;
+  --muted: #7d6657;
+  --accent: #d85d2a;
+  --accent-strong: #f07d43;
+  --accent-secondary: #0e7c66;
+  --ink-soft: #433127;
+  --paper-shadow: rgba(83, 37, 14, 0.12);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glow-drift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0) scale(1.02);
+  }
+}
+
+@keyframes sheen-pass {
+  from {
+    transform: translateX(-130%);
+  }
+  to {
+    transform: translateX(130%);
+  }
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(216, 93, 42, 0.17), transparent 28%),
+    radial-gradient(circle at top right, rgba(14, 124, 102, 0.13), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(219, 169, 91, 0.18), transparent 26%),
+    linear-gradient(180deg, var(--bg), var(--bg-deep));
+  color: var(--text);
+  font-family: "Helvetica Neue", "Avenir Next", "Segoe UI", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(216, 93, 42, 0.18);
+  color: #23160e;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.site-bg::before {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(77, 45, 23, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 45, 23, 0.03) 1px, transparent 1px);
+  background-size: 64px 64px;
+  content: "";
+  mask-image: linear-gradient(180deg, black 40%, transparent);
+}
+
+.font-display {
+  font-family: "Helvetica Neue", "Avenir Next", "Segoe UI", Arial, sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.surface {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 245, 0.95), rgba(248, 238, 227, 0.92));
+  box-shadow: 0 24px 60px var(--paper-shadow);
+  backdrop-filter: blur(10px);
+  border-radius: 32px;
+  transition:
+    transform 0.28s ease,
+    border-color 0.28s ease,
+    box-shadow 0.28s ease,
+    background 0.28s ease;
+}
+
+.surface,
+.surface p,
+.surface h1,
+.surface h2,
+.surface h3,
+.surface span,
+.surface li {
+  color: inherit;
+}
+
+.surface::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 20%, rgba(255, 255, 255, 0.45) 50%, transparent 80%);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-130%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .surface:hover {
+    transform: translateY(-4px);
+    border-color: rgba(216, 93, 42, 0.18);
+    box-shadow: 0 30px 80px rgba(95, 48, 23, 0.16);
+  }
+
+  .surface:hover::after {
+    opacity: 1;
+    animation: sheen-pass 0.9s ease;
+  }
+}
+
+.brand-mark {
+  display: grid;
+  height: 3rem;
+  width: 3rem;
+  place-items: center;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #e46a36, #f3b156);
+  color: #fff7ef;
+  font-family: "Helvetica Neue", "Avenir Next", "Segoe UI", Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  animation: glow-drift 5.5s ease-in-out infinite;
+}
+
+.nav-pill {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  color: var(--ink-soft);
+  transition: all 0.2s ease;
+}
+
+.nav-pill:hover {
+  border-color: rgba(216, 93, 42, 0.18);
+  background: rgba(216, 93, 42, 0.08);
+  color: #23160e;
+}
+
+.text-link {
+  color: var(--accent);
+  transition: color 0.2s ease;
+}
+
+.text-link:hover {
+  color: var(--accent-strong);
+}
+
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.page-shell > * {
+  opacity: 0;
+  animation: rise-in 0.7s ease forwards;
+}
+
+.page-shell > *:nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+.page-shell > *:nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+.page-shell > *:nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+.page-shell > *:nth-child(5) {
+  animation-delay: 0.32s;
+}
+
+.hero-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .hero-grid {
+    grid-template-columns: 1.35fr 0.9fr;
+  }
+}
+
+.section-title {
+  font-size: clamp(2rem, 4vw, 4.8rem);
+  line-height: 0.92;
+  font-weight: 800;
+}
+
+.card-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .card-grid.cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .card-grid.cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.feature-card {
+  border: 1px solid rgba(120, 64, 28, 0.1);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.44);
+  padding: 1.25rem;
+  transition:
+    transform 0.24s ease,
+    border-color 0.24s ease,
+    background 0.24s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .feature-card:hover,
+  .stat-card:hover,
+  .badge:hover {
+    transform: translateY(-3px);
+    border-color: rgba(216, 93, 42, 0.22);
+  }
+}
+
+.stat-card {
+  border: 1px solid rgba(120, 64, 28, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.42);
+  padding: 1rem 1.1rem;
+  transition:
+    transform 0.24s ease,
+    border-color 0.24s ease,
+    background 0.24s ease;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 64, 28, 0.1);
+  background: rgba(255, 255, 255, 0.62);
+  padding: 0.45rem 0.85rem;
+  color: #3c2a20;
+  font-size: 0.92rem;
+  transition:
+    transform 0.24s ease,
+    border-color 0.24s ease,
+    background 0.24s ease,
+    color 0.24s ease;
+}
+
+.feature-card h3,
+.stat-card p:last-child {
+  color: var(--text);
+}
+
+.article {
+  color: #4a3528;
+  line-height: 1.7;
+}
+
+.article h2 {
+  margin-top: 2rem;
+  margin-bottom: 0.8rem;
+  font-family: "Sora", "Avenir Next", "Trebuchet MS", sans-serif;
+  font-size: 1.55rem;
+  color: #23160e;
+}
+
+.article p {
+  margin-bottom: 1rem;
+}
+
+.article ul {
+  margin: 0 0 1rem 1.15rem;
+  list-style: disc;
+}
+
+.article li {
+  margin-bottom: 0.5rem;
+}
+
+.resume-sheet {
+  background: white;
+  color: #102132;
+  border-radius: 24px;
+  padding: 2rem;
+  box-shadow: 0 24px 60px rgba(2, 12, 18, 0.2);
+}
+
+.resume-sheet h2 {
+  font-family: "Sora", "Avenir Next", "Trebuchet MS", sans-serif;
+}
+
+.resume-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  font-size: 0.92rem;
+  color: #425466;
+}
+
+.resume-summary {
+  border: 1px solid #d7e3ea;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f9fbfc, #f2f6f8);
+  padding: 1rem 1.1rem;
+}
+
+.hero-compact {
+  min-height: 0;
+}
+
+.profile-panel {
+  align-self: start;
+}
+
+.warm-button {
+  background: linear-gradient(135deg, #df6030, #f19b52);
+  color: #fff7ef;
+  box-shadow: 0 14px 30px rgba(216, 93, 42, 0.24);
+}
+
+.warm-button:hover {
+  background: linear-gradient(135deg, #cc5427, #ec8c42);
+}
+
+.outline-button {
+  border: 1px solid rgba(120, 64, 28, 0.14);
+  background: rgba(255, 255, 255, 0.45);
+  color: #2d1f18;
+}
+
+.outline-button:hover {
+  background: rgba(216, 93, 42, 0.08);
+}
+
+.resume-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.resume-skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.resume-pill {
+  border-radius: 999px;
+  background: #eef4f7;
+  padding: 0.42rem 0.8rem;
+  font-size: 0.88rem;
+  color: #234154;
+}
+
+.resume-section-title {
+  border-bottom: 1px solid #d7e3ea;
+  padding-bottom: 0.45rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

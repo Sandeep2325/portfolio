@@ -11,7 +11,7 @@ export default async function BlogPage() {
     <div className="page-shell">
       <section className="surface px-6 py-8 sm:px-8">
         <p className="text-sm uppercase tracking-[0.22em] text-[var(--accent)]">Blog</p>
-        <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">Notes on engineering, AI workflows, and the modern React stack.</h1>
+        <h1 className="font-display text-4xl font-bold text-[var(--text)] sm:text-5xl">Notes on engineering, AI workflows, and the modern React stack.</h1>
         <p className="mt-5 max-w-3xl text-[var(--muted)]">
           Thoughts on product engineering, frontend architecture, and practical AI-assisted development.
         </p>
@@ -26,9 +26,9 @@ export default async function BlogPage() {
             </div>
             <div className="p-6">
               <div className="mb-3 flex items-center gap-4">
-                <span className="rounded-full bg-white/6 px-3 py-1 text-sm text-[var(--accent)]">{post.category}</span>
+                <span className="rounded-full bg-[#f3f6f8] px-3 py-1 text-sm text-[var(--accent)]">{post.category}</span>
               </div>
-              <h2 className="font-display text-2xl font-semibold text-white">{post.title}</h2>
+              <h2 className="font-display text-2xl font-semibold text-[var(--text)]">{post.title}</h2>
               <p className="mt-3 text-[var(--muted)]">{post.excerpt}</p>
               <div className="mt-5 flex items-center justify-between border-t border-white/8 pt-4">
                 <span className="text-sm text-[var(--muted)]">{post.read_time}</span>

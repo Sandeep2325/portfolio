@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { getNavigation, getSiteProfile } from "@/lib/portfolio-data";
+import AuthControl from "@/components/AuthControl";
 
 export const metadata: Metadata = {
   title: "Sandeep Gowda | Modern Portfolio",
@@ -37,12 +38,13 @@ export default async function RootLayout({
                     <p className="text-sm text-[var(--muted)]">{profile?.role || "Software Developer"}</p>
                   </div>
                 </Link>
-                <nav className="flex flex-wrap gap-2">
+                <nav className="flex flex-wrap items-center gap-2">
                   {navigation.map((item) => (
                     <Link key={item.href} href={item.href} className="nav-pill">
                       {item.label}
                     </Link>
                   ))}
+                  <AuthControl />
                 </nav>
               </div>
             </header>

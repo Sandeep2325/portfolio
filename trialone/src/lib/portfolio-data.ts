@@ -97,6 +97,7 @@ export async function getNavigation(): Promise<NavigationItem[]> {
     item.href === "/terminal" ? { ...item, label: "My Terminal" } : item,
   );
   const essentials: NavigationItem[] = [
+    { href: "/community", label: "Community", sort_order: 997 },
     { href: "/things", label: "My Things", sort_order: 998 },
     { href: "/terminal", label: "My Terminal", sort_order: 999 },
   ];

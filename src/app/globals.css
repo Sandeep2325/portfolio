@@ -1028,6 +1028,91 @@ body {
   margin-top: 1.1rem;
 }
 
+/* Presence line under the panel heading */
+.dm-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.dm-presence strong {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.dm-presence strong::after {
+  content: "·";
+  margin-left: 0.4rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.dm-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: hsl(215 15% 45%);
+}
+
+.dm-dot.online {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px hsl(142 71% 45% / 0.18);
+}
+
+.dm-typing-label {
+  color: hsl(207 100% 70%);
+  font-style: italic;
+}
+
+/* Read receipts */
+.dm-receipt {
+  margin-left: 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dm-receipt.read {
+  color: hsl(207 100% 72%);
+}
+
+/* Typing bubble */
+.dm.dm-typing {
+  width: fit-content;
+  padding: 0.6rem 0.75rem;
+}
+
+.dm-typing-dots {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.dm-typing-dots i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: var(--muted);
+  animation: typingBounce 1.2s infinite ease-in-out;
+}
+
+.dm-typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dm-typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
 /* ============================================================
    Auth screen
    ============================================================ */

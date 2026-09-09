@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppId } from "@/lib/os-apps";
 import type { OSData } from "@/lib/os-data";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
+import { useViewerProfile } from "@/hooks/useViewerProfile";
 import BootScreen from "./BootScreen";
 import Desktop from "./Desktop";
+import UsernamePrompt from "./UsernamePrompt";
 import MobileHomeScreen from "@/components/mobile/MobileHomeScreen";
 
 const BOOT_FLAG = "sandeep-os-booted";
@@ -35,6 +38,9 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
   const isMobile = useIsMobile();
   const [booted, setBooted] = useState(false);
   const [checkedBootFlag, setCheckedBootFlag] = useState(false);
+  const { token, profile, refresh } = useViewerProfile();
+
+  usePresenceHeartbeat();
 
   // Boot once per browser session; later visits go straight to the desktop.
   useEffect(() => {
@@ -65,9 +71,15 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
 
   if (!booted) return <BootScreen lines={lines} onComplete={finishBoot} />;
 
-  return isMobile ? (
-    <MobileHomeScreen data={data} initialApp={initialApp} />
-  ) : (
-    <Desktop data={data} initialApp={initialApp} />
+  return (
+    <>
+      {isMobile ? (
+        <MobileHomeScreen data={data} initialApp={initialApp} />
+      ) : (
+        <Desktop data={data} initialApp={initialApp} />
+      )}
+
+      {profile?.needsUsername && <UsernamePrompt token={token} email={profile.email} onClaimed={refresh} />}
+    </>
   );
 }

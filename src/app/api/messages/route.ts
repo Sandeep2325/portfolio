@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdminUserId, getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
+import { OWNER_DISPLAY_NAME, getAdminUserId, getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
 import { createServerSupabaseClient, getAssetBucketName, getPublicAssetUrl, isSupabaseConfigured } from "@/lib/supabase";
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
@@ -10,26 +10,49 @@ type DirectMessage = {
   recipient_id: string;
   body: string;
   image_path?: string | null;
+  read_at?: string | null;
   created_at: string;
+};
+
+export type Contact = {
+  id: string;
+  email: string;
+  username: string | null;
+  /** What the UI shows: username when claimed, otherwise the email. */
+  label: string;
+  lastSeenAt: string | null;
 };
 
 function withImageUrl<T extends { image_path?: string | null }>(message: T) {
   return { ...message, image_url: message.image_path ? getPublicAssetUrl(message.image_path) : null };
 }
 
-async function resolveContactEmails(userIds: string[]) {
-  if (userIds.length === 0) return {} as Record<string, string>;
+async function resolveContacts(userIds: string[]): Promise<Contact[]> {
+  if (userIds.length === 0) return [];
 
   const supabase = createServerSupabaseClient();
-  const entries = await Promise.all(
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, username, last_seen_at")
+    .in("id", userIds);
+
+  const byId = new Map((profiles || []).map((profile) => [profile.id as string, profile]));
+
+  return Promise.all(
     userIds.map(async (id) => {
+      const profile = byId.get(id);
       const { data, error } = await supabase.auth.admin.getUserById(id);
-      if (error || !data.user?.email) return [id, id.slice(0, 8) + "…"] as const;
-      return [id, data.user.email] as const;
+      const email = error || !data.user?.email ? `${id.slice(0, 8)}…` : data.user.email;
+      const username = (profile?.username as string | null) || null;
+      return {
+        id,
+        email,
+        username,
+        label: username || email,
+        lastSeenAt: (profile?.last_seen_at as string | null) || null,
+      };
     }),
   );
-
-  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 export async function GET(request: Request) {
@@ -50,7 +73,8 @@ export async function GET(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const messages = (data || []) as DirectMessage[];
-    let contacts: { id: string; email: string }[] = [];
+    let contacts: Contact[] = [];
+    let owner: { id: string; label: string; lastSeenAt: string | null } | null = null;
 
     if (admin) {
       const { data: guests } = await supabase.from("profiles").select("id").eq("is_super_admin", false);
@@ -59,13 +83,24 @@ export async function GET(request: Request) {
         .flatMap((message) => [message.sender_id, message.recipient_id])
         .filter((id) => id !== user.id);
       const peerIds = Array.from(new Set([...guestIds, ...peerIdsFromMessages]));
-      const emails = await resolveContactEmails(peerIds);
-      contacts = peerIds
-        .map((id) => ({ id, email: emails[id] || `${id.slice(0, 8)}…` }))
-        .sort((left, right) => left.email.localeCompare(right.email));
+      contacts = (await resolveContacts(peerIds)).sort((left, right) => left.label.localeCompare(right.label));
+    } else {
+      // Guests only ever talk to the owner, so ship that one peer's presence.
+      const { data: ownerProfile } = await supabase
+        .from("profiles")
+        .select("id, last_seen_at")
+        .eq("is_super_admin", true)
+        .maybeSingle();
+      if (ownerProfile) {
+        owner = {
+          id: ownerProfile.id as string,
+          label: OWNER_DISPLAY_NAME,
+          lastSeenAt: (ownerProfile.last_seen_at as string | null) || null,
+        };
+      }
     }
 
-    return NextResponse.json({ messages: messages.map(withImageUrl), admin, userId: user.id, contacts });
+    return NextResponse.json({ messages: messages.map(withImageUrl), admin, userId: user.id, contacts, owner });
   } catch (caught) {
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
   }

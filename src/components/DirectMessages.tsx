@@ -1,10 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HiOutlinePhoto } from "react-icons/hi2";
 import { browserSupabase, publicAssetUrl } from "@/lib/supabase-browser";
+import { useConversationChannel } from "@/hooks/useConversationChannel";
+import { isRecentlyActive, relativeTime } from "@/lib/relative-time";
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+const PRESENCE_POLL_MS = 60_000;
 
 type Message = {
   id: number;
@@ -13,10 +16,12 @@ type Message = {
   body: string;
   image_path?: string | null;
   image_url?: string | null;
+  read_at?: string | null;
   created_at: string;
 };
 
-type Contact = { id: string; email: string };
+type Contact = { id: string; email: string; username: string | null; label: string; lastSeenAt: string | null };
+type Owner = { id: string; label: string; lastSeenAt: string | null };
 
 /** Realtime rows carry image_path only, so derive the URL when it is missing. */
 function withImageUrl(message: Message): Message {
@@ -29,12 +34,21 @@ export default function DirectMessages() {
   const [admin, setAdmin] = useState(false);
   const [userId, setUserId] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [owner, setOwner] = useState<Owner | null>(null);
   const [recipientId, setRecipientId] = useState("");
+  const [peerLastSeen, setPeerLastSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [attachmentUrl, setAttachmentUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const listEndRef = useRef<HTMLDivElement>(null);
+
+  const peerId = admin ? recipientId : owner?.id || "";
+  const selectedContact = contacts.find((contact) => contact.id === recipientId);
+  const peerLabel = admin ? selectedContact?.label || "guest" : owner?.label || "Sandeep Gowda";
+
+  const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
 
   useEffect(() => {
     if (!browserSupabase) return;
@@ -57,6 +71,8 @@ export default function DirectMessages() {
       setAdmin(payload.admin);
       setUserId(payload.userId);
       setContacts(payload.contacts || []);
+      setOwner(payload.owner || null);
+      if (payload.owner) setPeerLastSeen(payload.owner.lastSeenAt);
 
       await supabase.realtime.setAuth(accessToken);
       channel = supabase
@@ -65,6 +81,13 @@ export default function DirectMessages() {
           const message = withImageUrl(event.new as Message);
           setMessages((current) => (current.some((item) => item.id === message.id) ? current : [...current, message]));
         })
+        // Read receipts: the peer stamping read_at arrives as an UPDATE.
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, (event) => {
+          const updated = event.new as Message;
+          setMessages((current) =>
+            current.map((item) => (item.id === updated.id ? { ...item, read_at: updated.read_at } : item)),
+          );
+        })
         .subscribe();
     });
 
@@ -72,6 +95,77 @@ export default function DirectMessages() {
       if (channel) void supabase.removeChannel(channel);
     };
   }, []);
+
+  // Track the selected guest's last-seen when the admin switches conversation.
+  useEffect(() => {
+    if (!admin) return;
+    setPeerLastSeen(selectedContact?.lastSeenAt || null);
+  }, [admin, selectedContact]);
+
+  // Poll the peer's last-seen so "last seen" stays honest without a page reload.
+  useEffect(() => {
+    if (!token || !peerId) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/presence?userId=${peerId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        setPeerLastSeen(data.lastSeenAt || null);
+      } catch {
+        // Keep the previous value.
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => void poll(), PRESENCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [token, peerId]);
+
+  const visibleMessages = useMemo(() => {
+    if (!admin) return messages;
+    if (!recipientId) return [];
+    return messages.filter((message) => message.sender_id === recipientId || message.recipient_id === recipientId);
+  }, [admin, messages, recipientId]);
+
+  // Mark the peer's messages read while this conversation is on screen.
+  const markRead = useCallback(async () => {
+    if (!token || !peerId || document.visibilityState !== "visible") return;
+    const unread = visibleMessages.filter((message) => message.sender_id === peerId && !message.read_at);
+    if (unread.length === 0) return;
+
+    try {
+      const response = await fetch("/api/messages/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ peerId }),
+      });
+      if (!response.ok) return;
+      const { readAt } = await response.json();
+      const ids = new Set(unread.map((message) => message.id));
+      setMessages((current) => current.map((item) => (ids.has(item.id) ? { ...item, read_at: readAt } : item)));
+    } catch {
+      // Retried the next time this effect runs.
+    }
+  }, [token, peerId, visibleMessages]);
+
+  useEffect(() => {
+    void markRead();
+    const onVisible = () => void markRead();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [markRead]);
+
+  useEffect(() => {
+    listEndRef.current?.scrollIntoView({ block: "nearest" });
+  }, [visibleMessages.length, peerTyping]);
 
   // Keep the local preview URL in step with the chosen file.
   useEffect(() => {
@@ -118,6 +212,7 @@ export default function DirectMessages() {
 
     setSending(true);
     setError("");
+    stopTyping();
     try {
       const payload = new FormData();
       payload.set("body", text);
@@ -144,14 +239,6 @@ export default function DirectMessages() {
     }
   }
 
-  const visibleMessages = useMemo(() => {
-    if (!admin) return messages;
-    if (!recipientId) return [];
-    return messages.filter((message) => message.sender_id === recipientId || message.recipient_id === recipientId);
-  }, [admin, messages, recipientId]);
-
-  const selectedContact = contacts.find((contact) => contact.id === recipientId);
-
   if (!token) {
     return (
       <section className="surface px-6 py-8">
@@ -162,17 +249,31 @@ export default function DirectMessages() {
   }
 
   const blocked = admin && !recipientId;
+  const active = peerOnline || isRecentlyActive(peerLastSeen);
+  const lastSeenLabel = relativeTime(peerLastSeen);
 
   return (
     <section className="surface messages-panel px-6 py-7 sm:px-8">
       <div className="section-heading">
         <div>
           <h2>{admin ? "Admin inbox" : "Message Sandeep"}</h2>
-          <p>
-            {admin
-              ? "Select a guest email to view that conversation or start a new one."
-              : "This conversation is visible only to you and the portfolio owner."}
-          </p>
+          {blocked ? (
+            <p>Select a guest email to view that conversation or start a new one.</p>
+          ) : (
+            <p className="dm-presence">
+              <span className={active ? "dm-dot online" : "dm-dot"} />
+              <strong>{peerLabel}</strong>
+              {peerTyping ? (
+                <span className="dm-typing-label">typing…</span>
+              ) : active ? (
+                <span>Active now</span>
+              ) : lastSeenLabel ? (
+                <span>Last seen {lastSeenLabel}</span>
+              ) : (
+                <span>Offline</span>
+              )}
+            </p>
+          )}
         </div>
       </div>
 
@@ -181,7 +282,8 @@ export default function DirectMessages() {
           <option value="">Choose a guest to message</option>
           {contacts.map((contact) => (
             <option value={contact.id} key={contact.id}>
-              {contact.email}
+              {contact.label}
+              {contact.username ? ` · ${contact.email}` : ""}
             </option>
           ))}
         </select>
@@ -192,24 +294,43 @@ export default function DirectMessages() {
           <p className="dm-empty">Select a guest email to view or start a private conversation.</p>
         ) : visibleMessages.length === 0 ? (
           <p className="dm-empty">
-            {admin
-              ? `No messages with ${selectedContact?.email || "this guest"} yet. Send the first message below.`
-              : "No messages yet. Say hello below."}
+            {admin ? `No messages with ${peerLabel} yet. Send the first message below.` : "No messages yet. Say hello below."}
           </p>
         ) : (
-          visibleMessages.map((message) => (
-            <div className={message.sender_id === userId ? "dm outgoing" : "dm incoming"} key={message.id}>
-              {message.body.trim() ? <p>{message.body}</p> : null}
-              {message.image_url ? (
-                <a href={message.image_url} target="_blank" rel="noreferrer">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={message.image_url} alt="Attachment" className="dm-image" />
-                </a>
-              ) : null}
-              <time>{new Date(message.created_at).toLocaleString()}</time>
-            </div>
-          ))
+          visibleMessages.map((message) => {
+            const outgoing = message.sender_id === userId;
+            return (
+              <div className={outgoing ? "dm outgoing" : "dm incoming"} key={message.id}>
+                {message.body.trim() ? <p>{message.body}</p> : null}
+                {message.image_url ? (
+                  <a href={message.image_url} target="_blank" rel="noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={message.image_url} alt="Attachment" className="dm-image" />
+                  </a>
+                ) : null}
+                <time>
+                  {new Date(message.created_at).toLocaleString()}
+                  {outgoing && (
+                    <span className={message.read_at ? "dm-receipt read" : "dm-receipt"}>
+                      {message.read_at ? "✓✓ Read" : "✓ Sent"}
+                    </span>
+                  )}
+                </time>
+              </div>
+            );
+          })
         )}
+
+        {peerTyping && !blocked && (
+          <div className="dm incoming dm-typing" aria-live="polite">
+            <span className="dm-typing-dots">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+        )}
+        <div ref={listEndRef} />
       </div>
 
       <form className="dm-form" onSubmit={send}>
@@ -218,13 +339,11 @@ export default function DirectMessages() {
           maxLength={2000}
           rows={3}
           placeholder={
-            admin
-              ? recipientId
-                ? `Message ${selectedContact?.email || "guest"}…`
-                : "Choose a guest above to message…"
-              : "Write a private message…"
+            admin ? (recipientId ? `Message ${peerLabel}…` : "Choose a guest above to message…") : "Write a private message…"
           }
           disabled={sending || blocked}
+          onChange={notifyTyping}
+          onBlur={stopTyping}
         />
 
         {attachment && attachmentUrl && (

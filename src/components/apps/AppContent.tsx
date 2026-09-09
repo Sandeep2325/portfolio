@@ -15,10 +15,12 @@ interface AppContentProps {
   id: AppId;
   data: OSData;
   onOpenApp: (id: AppId) => void;
+  /** False when the window is closed or minimized, i.e. the user cannot see it. */
+  isVisible?: boolean;
 }
 
 /** Single mapping of app id to window body, shared by the desktop and mobile shells. */
-export default function AppContent({ id, data, onOpenApp }: AppContentProps) {
+export default function AppContent({ id, data, onOpenApp, isVisible = true }: AppContentProps) {
   switch (id) {
     case "about":
       return <AboutApp data={data} onOpenApp={onOpenApp} />;
@@ -33,7 +35,7 @@ export default function AppContent({ id, data, onOpenApp }: AppContentProps) {
     case "community":
       return <CommunityApp />;
     case "messages":
-      return <MessagesApp />;
+      return <MessagesApp isVisible={isVisible} />;
     case "contact":
       return <ContactApp data={data} />;
     default:

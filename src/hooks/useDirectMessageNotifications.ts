@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
+import { isConversationOnScreen } from "@/lib/dm-focus";
+import type { AttachmentKind } from "@/lib/attachments";
 
 export type UnreadItem = {
   id: number;
@@ -16,38 +18,51 @@ export type NotificationPermissionState = "unsupported" | "default" | "granted" 
 
 const REFRESH_DEBOUNCE_MS = 300;
 
-function currentPermission(): NotificationPermissionState {
+const KIND_PREVIEW: Record<AttachmentKind, string> = {
+  image: "📷 Photo",
+  audio: "🎤 Voice message",
+  file: "📎 Attachment",
+};
+
+export function currentPermission(): NotificationPermissionState {
   if (typeof window === "undefined" || typeof Notification === "undefined") return "unsupported";
   return Notification.permission as NotificationPermissionState;
 }
 
+function preview(body: string, kind: AttachmentKind | null) {
+  const text = (body || "").trim();
+  if (text) return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  return kind ? KIND_PREVIEW[kind] : "New message";
+}
+
 /**
- * Watches the caller's inbox for unread messages: drives the dock badge, raises
- * a system notification when the tab is in the background, and surfaces an
- * in-app toast when it is not.
+ * Announces incoming direct messages and keeps the unread badge in step.
+ *
+ * Announcements are driven by the realtime INSERT itself, not by the unread
+ * list: with the Messages window open, a message is marked read within a few
+ * hundred milliseconds of arriving, so anything keyed off "still unread" would
+ * never fire.
  */
 export function useDirectMessageNotifications() {
-  const [items, setItems] = useState<UnreadItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast] = useState<UnreadItem | null>(null);
   const [permission, setPermission] = useState<NotificationPermissionState>("unsupported");
 
-  const seenIds = useRef<Set<number>>(new Set());
-  const primed = useRef(false);
+  const userIdRef = useRef("");
+  const labelCache = useRef(new Map<string, string>());
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => setPermission(currentPermission()), []);
 
-  const load = useCallback(async () => {
+  /** Badge count only — announcements are handled on arrival. */
+  const refreshUnread = useCallback(async () => {
     if (!browserSupabase) return;
     const { data } = await browserSupabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) {
-      setItems([]);
-      seenIds.current = new Set();
-      primed.current = false;
+      setUnreadCount(0);
       return;
     }
-
     try {
       const response = await fetch("/api/messages/unread", {
         headers: { Authorization: `Bearer ${token}` },
@@ -55,92 +70,143 @@ export function useDirectMessageNotifications() {
       });
       if (!response.ok) return;
       const payload = (await response.json()) as { items: UnreadItem[] };
-      const fresh = payload.items || [];
-      setItems(fresh);
-
-      // The first load is a baseline — don't announce a backlog of old unreads.
-      const arrivals = fresh.filter((item) => !seenIds.current.has(item.id));
-      seenIds.current = new Set(fresh.map((item) => item.id));
-
-      if (!primed.current) {
-        primed.current = true;
-        return;
-      }
-      if (arrivals.length === 0) return;
-
-      const latest = arrivals[arrivals.length - 1];
-      if (document.visibilityState === "visible") {
-        setToast(latest);
-      } else if (currentPermission() === "granted") {
-        const notification = new Notification(`${latest.senderLabel} sent you a message`, {
-          body: latest.preview,
-          tag: `dm-${latest.id}`,
-          icon: "/favicon.ico",
-        });
-        notification.onclick = () => {
-          window.focus();
-          notification.close();
-        };
-      }
+      setUnreadCount((payload.items || []).length);
+      for (const item of payload.items || []) labelCache.current.set(item.senderId, item.senderLabel);
     } catch {
-      // Transient failure; the next realtime event retries.
+      // Next event retries.
     }
   }, []);
 
-  const scheduleLoad = useCallback(() => {
+  const scheduleRefresh = useCallback(() => {
     if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => void load(), REFRESH_DEBOUNCE_MS);
-  }, [load]);
+    debounce.current = setTimeout(() => void refreshUnread(), REFRESH_DEBOUNCE_MS);
+  }, [refreshUnread]);
+
+  const labelFor = useCallback(async (senderId: string, token: string) => {
+    const cached = labelCache.current.get(senderId);
+    if (cached) return cached;
+    try {
+      const response = await fetch(`/api/messages/sender?id=${senderId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!response.ok) return "New message";
+      const { label } = await response.json();
+      labelCache.current.set(senderId, label);
+      return label as string;
+    } catch {
+      return "New message";
+    }
+  }, []);
+
+  const announce = useCallback(
+    async (row: { id: number; sender_id: string; body: string; attachment_kind?: AttachmentKind | null; created_at: string }, token: string) => {
+      // Already reading this thread? Nothing to announce.
+      if (isConversationOnScreen(row.sender_id)) return;
+
+      const item: UnreadItem = {
+        id: row.id,
+        senderId: row.sender_id,
+        senderLabel: await labelFor(row.sender_id, token),
+        preview: preview(row.body, row.attachment_kind || null),
+        createdAt: row.created_at,
+      };
+
+      const canNotify = currentPermission() === "granted";
+      const inBackground = document.visibilityState !== "visible" || !document.hasFocus();
+
+      // A system notification when the tab is not in front, a toast when it is.
+      if (canNotify && inBackground) {
+        try {
+          const notification = new Notification(`${item.senderLabel} sent you a message`, {
+            body: item.preview,
+            tag: `dm-${item.id}`,
+            icon: "/icon.svg",
+          });
+          notification.onclick = () => {
+            window.focus();
+            notification.close();
+          };
+          return;
+        } catch {
+          // Fall through to the toast if the constructor is unavailable.
+        }
+      }
+
+      setToast(item);
+    },
+    [labelFor],
+  );
 
   useEffect(() => {
-    void load();
+    void refreshUnread();
     if (!browserSupabase) return;
     const supabase = browserSupabase;
     let channel: ReturnType<typeof supabase.channel> | undefined;
+    let cancelled = false;
 
-    void supabase.auth.getSession().then(async ({ data }) => {
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return;
+      const user = data.session?.user;
+      if (!token || !user || cancelled) return;
+      userIdRef.current = user.id;
+
       await primeRealtimeAuth(supabase);
+      if (cancelled) return;
+
       channel = supabase
         .channel(`dm-inbox-watch-${Date.now()}`)
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, scheduleLoad)
-        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, scheduleLoad)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, (event) => {
+          const row = event.new as {
+            id: number;
+            sender_id: string;
+            recipient_id: string;
+            body: string;
+            attachment_kind?: AttachmentKind | null;
+            created_at: string;
+          };
+          scheduleRefresh();
+          if (row.recipient_id !== userIdRef.current) return;
+          void announce(row, token);
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, scheduleRefresh)
         .subscribe((status) => {
           // A dropped socket would otherwise leave the badge frozen.
-          if (status === "SUBSCRIBED" || isDeadChannelStatus(status)) scheduleLoad();
+          if (status === "SUBSCRIBED" || isDeadChannelStatus(status)) scheduleRefresh();
         });
-    });
+    })();
 
     // Backstop for a socket that never recovers.
-    const onFocus = () => scheduleLoad();
+    const onFocus = () => scheduleRefresh();
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
 
-    const { data: auth } = supabase.auth.onAuthStateChange(() => void load());
+    const { data: auth } = supabase.auth.onAuthStateChange(() => void refreshUnread());
 
     return () => {
+      cancelled = true;
       if (debounce.current) clearTimeout(debounce.current);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
       auth.subscription.unsubscribe();
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [load, scheduleLoad]);
+  }, [refreshUnread, scheduleRefresh, announce]);
 
   const requestPermission = useCallback(async () => {
-    if (typeof Notification === "undefined") return;
-    const result = await Notification.requestPermission();
-    setPermission(result as NotificationPermissionState);
+    if (typeof Notification === "undefined") return "unsupported" as const;
+    const result = (await Notification.requestPermission()) as NotificationPermissionState;
+    setPermission(result);
+    return result;
   }, []);
 
   return {
-    unreadCount: items.length,
-    items,
+    unreadCount,
     toast,
     dismissToast: () => setToast(null),
     permission,
     requestPermission,
-    refresh: load,
+    refresh: refreshUnread,
   };
 }

@@ -152,7 +152,12 @@ export default function MobileHomeScreen({ data, initialApp, unreadCount, toast,
             if (previous) restoreApp(previous);
           }}
         >
-          <AppContent id={app.id} data={data} onOpenApp={handleAppClick} />
+          <AppContent
+            id={app.id}
+            data={data}
+            onOpenApp={handleAppClick}
+            isVisible={apps[app.id].isOpen && !apps[app.id].isMinimized}
+          />
         </MobileAppWindow>
       ))}
 

@@ -6,7 +6,6 @@ import {
   HiOutlinePaperClip,
   HiOutlineMicrophone,
   HiOutlineStop,
-  HiOutlineBellAlert,
   HiOutlineArrowPath,
 } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
@@ -14,6 +13,7 @@ import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
 import { useConversationChannel } from "@/hooks/useConversationChannel";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { isRecentlyActive, relativeTime } from "@/lib/relative-time";
+import { setActiveConversation } from "@/lib/dm-focus";
 import {
   FILE_INPUT_ACCEPT,
   MAX_ATTACHMENT_SIZE,
@@ -23,6 +23,7 @@ import {
   type AttachmentKind,
 } from "@/lib/attachments";
 import MessageAttachment, { type MessageAttachmentData } from "./MessageAttachment";
+import NotificationSetting from "./NotificationSetting";
 
 const PRESENCE_POLL_MS = 60_000;
 /** Signed URLs last an hour; refresh a little before that. */
@@ -79,7 +80,7 @@ function merge(current: Message[], incoming: Message[]) {
   return [...byId.values()].sort((left, right) => left.created_at.localeCompare(right.created_at));
 }
 
-export default function DirectMessages() {
+export default function DirectMessages({ isVisible = true }: { isVisible?: boolean }) {
   const [token, setToken] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [admin, setAdmin] = useState(false);
@@ -90,7 +91,6 @@ export default function DirectMessages() {
   const [peerLastSeen, setPeerLastSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
-  const [notifyPermission, setNotifyPermission] = useState<NotificationPermission | "unsupported">("unsupported");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
@@ -107,9 +107,13 @@ export default function DirectMessages() {
 
   const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
 
+  // Suppress banners only while this thread is genuinely on screen. A minimized
+  // window keeps this component mounted, and claiming focus from there would
+  // swallow notifications and mark messages read behind the user's back.
   useEffect(() => {
-    if (typeof Notification !== "undefined") setNotifyPermission(Notification.permission);
-  }, []);
+    setActiveConversation(isVisible ? peerId || null : null);
+    return () => setActiveConversation(null);
+  }, [peerId, isVisible]);
 
   /** Fetches fresh signed URLs for the given messages. */
   const signAttachments = useCallback(async (ids: number[], accessToken: string) => {
@@ -311,7 +315,7 @@ export default function DirectMessages() {
   }, [admin, messages, recipientId]);
 
   const markRead = useCallback(async () => {
-    if (!token || !peerId || document.visibilityState !== "visible") return;
+    if (!token || !peerId || !isVisible || document.visibilityState !== "visible") return;
     const unread = visibleMessages.filter((message) => message.sender_id === peerId && !message.read_at);
     if (unread.length === 0) return;
 
@@ -328,7 +332,7 @@ export default function DirectMessages() {
     } catch {
       // Retried the next time this effect runs.
     }
-  }, [token, peerId, visibleMessages]);
+  }, [token, peerId, visibleMessages, isVisible]);
 
   useEffect(() => {
     void markRead();
@@ -376,11 +380,6 @@ export default function DirectMessages() {
     });
     recorder.discard();
   }, [recorder]);
-
-  async function enableNotifications() {
-    if (typeof Notification === "undefined") return;
-    setNotifyPermission(await Notification.requestPermission());
-  }
 
   /**
    * Posts a message that is already on screen as an optimistic bubble, then
@@ -519,8 +518,8 @@ export default function DirectMessages() {
   const recording = recorder.state === "recording" || recorder.state === "requesting";
 
   return (
-    <section className="surface messages-panel px-6 py-7 sm:px-8">
-      <div className="section-heading">
+    <section className="surface messages-panel px-6 py-6 sm:px-8">
+      <div className="section-heading dm-header">
         <div>
           <h2>{admin ? "Admin inbox" : "Message Sandeep"}</h2>
           {blocked ? (
@@ -543,12 +542,7 @@ export default function DirectMessages() {
         </div>
       </div>
 
-      {notifyPermission === "default" && (
-        <button type="button" className="dm-notify-cta" onClick={() => void enableNotifications()}>
-          <HiOutlineBellAlert className="h-4 w-4" />
-          Turn on notifications for new messages
-        </button>
-      )}
+      <NotificationSetting />
 
       {admin && (
         <select value={recipientId} onChange={(event) => setRecipientId(event.target.value)}>

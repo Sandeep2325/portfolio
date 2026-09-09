@@ -161,7 +161,12 @@ export default function Desktop({ data, initialApp, unreadCount, toast, onDismis
               onPositionChange={(position) => updatePosition(app.id, position)}
               onSizeChange={(size) => updateSize(app.id, size)}
             >
-              <AppContent id={app.id} data={data} onOpenApp={handleAppClick} />
+              <AppContent
+                id={app.id}
+                data={data}
+                onOpenApp={handleAppClick}
+                isVisible={windows[app.id].isOpen && !windows[app.id].isMinimized}
+              />
             </Window>
           </div>
         ))}

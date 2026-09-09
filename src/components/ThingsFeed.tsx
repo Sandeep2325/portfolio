@@ -24,6 +24,7 @@ export default function ThingsFeed() {
   const [visitor, setVisitor] = useState("");
   const [openComposer, setOpenComposer] = useState(false);
   const [accessToken, setAccessToken] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [likingId, setLikingId] = useState<number | null>(null);
@@ -48,7 +49,11 @@ export default function ThingsFeed() {
       setAccessToken(token);
       if (!token) return;
       const response = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } });
-      if (response.ok) setIsAdmin((await response.json()).isAdmin);
+      if (response.ok) {
+        const profile = await response.json();
+        setIsAdmin(Boolean(profile.isAdmin));
+        setDisplayName(profile.displayName || "");
+      }
     });
   }, []);
 
@@ -114,13 +119,17 @@ export default function ThingsFeed() {
   async function addComment(event: FormEvent<HTMLFormElement>, postId: number) {
     event.preventDefault();
     if (commentingId === postId) return;
+    if (!accessToken) {
+      setPostError("Sign in to comment.");
+      return;
+    }
     setCommentingId(postId);
     try {
       const form = new FormData(event.currentTarget);
       const response = await fetch("/api/things/comments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId, body: form.get("comment"), authorName: form.get("name") || "Ghost" }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ postId, body: form.get("comment") }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -250,27 +259,35 @@ export default function ThingsFeed() {
               <div className="comments">
                 {post.comments.map((comment) => (
                   <div className="comment" key={comment.id}>
-                    <div className="comment-avatar">G</div>
+                    <div className="comment-avatar">{comment.author_name.slice(0, 1).toUpperCase()}</div>
                     <div>
                       <strong>{comment.author_name}</strong>
                       <p>{comment.body}</p>
                     </div>
                   </div>
                 ))}
-                <form className="comment-form" onSubmit={(event) => void addComment(event, post.id)}>
-                  <input name="name" maxLength={40} placeholder="Ghost name (optional)" disabled={commenting} />
-                  <input
-                    id={`comment-${post.id}`}
-                    name="comment"
-                    maxLength={500}
-                    required
-                    placeholder="Add a comment as Ghost…"
-                    disabled={commenting}
-                  />
-                  <button type="submit" disabled={commenting}>
-                    {commenting ? "Sending…" : "Send"}
-                  </button>
-                </form>
+                {accessToken ? (
+                  <form className="comment-form signed-in" onSubmit={(event) => void addComment(event, post.id)}>
+                    <input
+                      id={`comment-${post.id}`}
+                      name="comment"
+                      maxLength={500}
+                      required
+                      placeholder={`Comment as ${displayName || "you"}…`}
+                      disabled={commenting}
+                    />
+                    <button type="submit" disabled={commenting}>
+                      {commenting ? "Sending…" : "Send"}
+                    </button>
+                  </form>
+                ) : (
+                  <p className="comment-signin">
+                    <a href="/login" className="text-link">
+                      Sign in
+                    </a>{" "}
+                    to comment with your username.
+                  </p>
+                )}
               </div>
             </article>
           );

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { browserSupabase } from "@/lib/supabase-browser";
 
 type Message = {
@@ -19,8 +20,11 @@ export default function CommunityWall() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessToken] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [sending, setSending] = useState(false);
   const [replySending, setReplySending] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const date = useMemo(
     () => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
@@ -35,7 +39,17 @@ export default function CommunityWall() {
       else setError(data.error || "Could not load messages.");
       setLoading(false);
     })();
-    if (browserSupabase) void browserSupabase.auth.getSession().then(({ data }) => setAccessToken(data.session?.access_token || ""));
+    if (!browserSupabase) return;
+    void browserSupabase.auth.getSession().then(async ({ data }) => {
+      const token = data.session?.access_token || "";
+      setAccessToken(token);
+      if (!token) return;
+      const me = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+      if (!me.ok) return;
+      const profile = await me.json();
+      setDisplayName(profile.displayName || "");
+      setIsAdmin(Boolean(profile.isAdmin));
+    });
   }, []);
 
   useEffect(() => {
@@ -86,6 +100,35 @@ export default function CommunityWall() {
     }
   }
 
+  async function deleteMessage(messageId: number, isThread: boolean) {
+    if (!isAdmin || deletingId === messageId) return;
+    const confirmText = isThread
+      ? "Delete this message and its entire reply thread?"
+      : "Delete this reply?";
+    if (!window.confirm(confirmText)) return;
+
+    setDeletingId(messageId);
+    setError("");
+    try {
+      const response = await fetch("/api/community", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ messageId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Could not delete message.");
+        return;
+      }
+      setMessages((current) =>
+        current.filter((message) => message.id !== messageId && message.parent_id !== messageId),
+      );
+      if (replyTo === messageId) setReplyTo(null);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   function startReply(messageId: number) {
     if (!accessToken) {
       setError("Sign in to reply.");
@@ -110,10 +153,18 @@ export default function CommunityWall() {
 
       <form className="community-form" onSubmit={sendMessage}>
         <div className="reply-status">
-          <span>{accessToken ? "Start a new community post" : "Sign in to join the conversation"}</span>
-        </div>
-        <div className="community-fields">
-          <input name="name" maxLength={40} placeholder="Your display name (optional)" disabled={!accessToken || sending} />
+          {accessToken ? (
+            <span>
+              Posting as <strong>{displayName || "you"}</strong>
+            </span>
+          ) : (
+            <span>
+              <Link href="/login" className="text-link">
+                Sign in
+              </Link>{" "}
+              to join the conversation
+            </span>
+          )}
         </div>
         <textarea
           name="body"
@@ -144,12 +195,26 @@ export default function CommunityWall() {
             const isReplying = replyTo === message.id;
             return (
               <article className="community-message" key={message.id}>
-                <div className={message.is_owner ? "message-avatar owner" : "message-avatar"}>{message.is_owner ? "SG" : "G"}</div>
+                <div className={message.is_owner ? "message-avatar owner" : "message-avatar"}>
+                  {message.is_owner ? "SG" : message.author_name.slice(0, 1).toUpperCase()}
+                </div>
                 <div className="message-main">
-                  <div>
-                    <strong>{message.author_name}</strong>
-                    {message.is_owner && <span className="owner-badge">Owner</span>}
-                    <time>{date.format(new Date(message.created_at))}</time>
+                  <div className="message-meta">
+                    <div>
+                      <strong>{message.author_name}</strong>
+                      {message.is_owner && <span className="owner-badge">Owner</span>}
+                      <time>{date.format(new Date(message.created_at))}</time>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="post-delete"
+                        disabled={deletingId === message.id}
+                        onClick={() => void deleteMessage(message.id, true)}
+                      >
+                        {deletingId === message.id ? "Deleting…" : "Delete thread"}
+                      </button>
+                    )}
                   </div>
                   {message.body.trim() ? <p>{message.body}</p> : null}
                   {message.image_url ? <img src={message.image_url} alt="" className="community-image" /> : null}
@@ -162,11 +227,27 @@ export default function CommunityWall() {
 
                   {threadReplies.map((reply) => (
                     <div className="community-reply" key={reply.id}>
-                      <div className={reply.is_owner ? "message-avatar owner" : "message-avatar"}>{reply.is_owner ? "SG" : "G"}</div>
-                      <div>
-                        <strong>{reply.author_name}</strong>
-                        {reply.is_owner && <span className="owner-badge">Owner</span>}
-                        <time>{date.format(new Date(reply.created_at))}</time>
+                      <div className={reply.is_owner ? "message-avatar owner" : "message-avatar"}>
+                        {reply.is_owner ? "SG" : reply.author_name.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="community-reply-body">
+                        <div className="message-meta">
+                          <div>
+                            <strong>{reply.author_name}</strong>
+                            {reply.is_owner && <span className="owner-badge">Owner</span>}
+                            <time>{date.format(new Date(reply.created_at))}</time>
+                          </div>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              className="post-delete"
+                              disabled={deletingId === reply.id}
+                              onClick={() => void deleteMessage(reply.id, false)}
+                            >
+                              {deletingId === reply.id ? "Deleting…" : "Delete"}
+                            </button>
+                          )}
+                        </div>
                         {reply.body.trim() ? <p>{reply.body}</p> : null}
                         {reply.image_url ? <img src={reply.image_url} alt="" className="community-image" /> : null}
                       </div>
@@ -177,18 +258,13 @@ export default function CommunityWall() {
                     <form className="inline-reply-form" onSubmit={(event) => void sendReply(event, message.id)}>
                       <div className="inline-reply-heading">
                         <span>
-                          Replying to <strong>{replyTarget?.author_name || "this message"}</strong>
+                          Replying to <strong>{replyTarget?.author_name || "this message"}</strong> as{" "}
+                          <strong>{displayName || "you"}</strong>
                         </span>
                         <button type="button" disabled={replySending} onClick={() => setReplyTo(null)}>
                           Cancel
                         </button>
                       </div>
-                      <input
-                        name="name"
-                        maxLength={40}
-                        placeholder="Your display name (optional)"
-                        disabled={!accessToken || replySending}
-                      />
                       <textarea
                         ref={replyInputRef}
                         name="body"

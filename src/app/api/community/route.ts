@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient, getAssetBucketName, getPublicAssetUrl, isSupabaseConfigured } from "@/lib/supabase";
-import { getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
+import { getAuthenticatedUser, getUserDisplayName, isSuperAdmin } from "@/lib/auth-server";
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
@@ -37,12 +37,11 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const message = String(form.get("body") || form.get("message") || form.get("reply") || "").trim();
-  const name = String(form.get("authorName") || form.get("name") || "").trim() || "Ghost";
   const parentRaw = form.get("parentId");
   const parentId = parentRaw === null || parentRaw === "" ? null : Number(parentRaw);
   const image = form.get("image");
 
-  if ((!message && !(image instanceof File && image.size > 0)) || message.length > 1000 || name.length > 40) {
+  if ((!message && !(image instanceof File && image.size > 0)) || message.length > 1000) {
     return error("Enter a message or image of up to 1,000 characters.");
   }
   if (parentId !== null && !Number.isInteger(parentId)) {
@@ -50,6 +49,7 @@ export async function POST(request: Request) {
   }
 
   const isOwner = await isSuperAdmin(user.id);
+  const authorName = await getUserDisplayName(user);
 
   try {
     const supabase = createServerSupabaseClient();
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       .from("community_messages")
       .insert({
         body: bodyText,
-        author_name: isOwner ? "Sandeep Gowda" : name,
+        author_name: authorName,
         parent_id: parentId,
         is_owner: isOwner,
         image_path: imagePath,
@@ -82,6 +82,47 @@ export async function POST(request: Request) {
 
     if (insertError) return error(insertError.message, 500);
     return NextResponse.json({ message: withImageUrl(data) }, { status: 201 });
+  } catch (caught) {
+    return error(caught instanceof Error ? caught.message : "Unexpected server error.", 500);
+  }
+}
+
+export async function DELETE(request: Request) {
+  if (!isSupabaseConfigured()) return error("Community is not configured.", 500);
+  const user = await getAuthenticatedUser(request);
+  if (!user) return error("Please sign in to delete messages.", 401);
+  if (!(await isSuperAdmin(user.id))) return error("Only the portfolio admin can delete community messages.", 403);
+
+  const { messageId } = (await request.json()) as { messageId?: number };
+  if (!messageId || !Number.isFinite(messageId)) return error("Choose a message to delete.");
+
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data: message, error: loadError } = await supabase
+      .from("community_messages")
+      .select("id, image_path, parent_id")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (loadError) return error(loadError.message, 500);
+    if (!message) return error("Message not found.", 404);
+
+    // Collect images from the message and its replies (thread delete when parent).
+    const { data: replies } = message.parent_id
+      ? { data: [] as { image_path: string | null }[] }
+      : await supabase.from("community_messages").select("image_path").eq("parent_id", messageId);
+
+    const imagePaths = [message.image_path, ...((replies || []).map((reply) => reply.image_path))]
+      .filter((path): path is string => Boolean(path));
+
+    const { error: deleteError } = await supabase.from("community_messages").delete().eq("id", messageId);
+    if (deleteError) return error(deleteError.message, 500);
+
+    if (imagePaths.length > 0) {
+      await supabase.storage.from(getAssetBucketName()).remove(imagePaths);
+    }
+
+    return NextResponse.json({ success: true, messageId, deletedThread: !message.parent_id });
   } catch (caught) {
     return error(caught instanceof Error ? caught.message : "Unexpected server error.", 500);
   }

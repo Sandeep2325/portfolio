@@ -5,8 +5,8 @@ import { getAuthenticatedUser, getUserDisplayName } from "@/lib/auth-server";
 export async function POST(request: Request) {
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Things is not configured." }, { status: 500 });
 
+  // Signing in is optional — visitors without an account comment as "Ghost".
   const user = await getAuthenticatedUser(request);
-  if (!user) return NextResponse.json({ error: "Please sign in to comment." }, { status: 401 });
 
   const { postId, body } = (await request.json()) as { postId?: number; body?: string };
   const message = body?.trim() || "";
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const authorName = await getUserDisplayName(user);
+    const authorName = user ? await getUserDisplayName(user) : "Ghost";
     const { data, error } = await createServerSupabaseClient()
       .from("things_comments")
       .insert({ post_id: postId, author_name: authorName, body: message })

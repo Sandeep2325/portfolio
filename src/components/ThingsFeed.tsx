@@ -119,16 +119,17 @@ export default function ThingsFeed() {
   async function addComment(event: FormEvent<HTMLFormElement>, postId: number) {
     event.preventDefault();
     if (commentingId === postId) return;
-    if (!accessToken) {
-      setPostError("Sign in to comment.");
-      return;
-    }
     setCommentingId(postId);
+    const formElement = event.currentTarget;
     try {
-      const form = new FormData(event.currentTarget);
+      const form = new FormData(formElement);
       const response = await fetch("/api/things/comments", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        headers: {
+          "Content-Type": "application/json",
+          // Signed-out visitors post without a token and land as "Ghost".
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({ postId, body: form.get("comment") }),
       });
       const data = await response.json();
@@ -139,7 +140,7 @@ export default function ThingsFeed() {
       setPosts((current) =>
         current.map((post) => (post.id === postId ? { ...post, comments: [...post.comments, data.comment] } : post)),
       );
-      event.currentTarget.reset();
+      formElement.reset();
     } finally {
       setCommentingId(null);
     }
@@ -266,22 +267,22 @@ export default function ThingsFeed() {
                     </div>
                   </div>
                 ))}
-                {accessToken ? (
-                  <form className="comment-form signed-in" onSubmit={(event) => void addComment(event, post.id)}>
-                    <input
-                      id={`comment-${post.id}`}
-                      name="comment"
-                      maxLength={500}
-                      required
-                      placeholder={`Comment as ${displayName || "you"}…`}
-                      disabled={commenting}
-                    />
-                    <button type="submit" disabled={commenting}>
-                      {commenting ? "Sending…" : "Send"}
-                    </button>
-                  </form>
-                ) : (
+                <form className="comment-form signed-in" onSubmit={(event) => void addComment(event, post.id)}>
+                  <input
+                    id={`comment-${post.id}`}
+                    name="comment"
+                    maxLength={500}
+                    required
+                    placeholder={accessToken ? `Comment as ${displayName || "you"}…` : "Comment as Ghost…"}
+                    disabled={commenting}
+                  />
+                  <button type="submit" disabled={commenting}>
+                    {commenting ? "Sending…" : "Send"}
+                  </button>
+                </form>
+                {!accessToken && (
                   <p className="comment-signin">
+                    Posting as Ghost.{" "}
                     <a href="/login" className="text-link">
                       Sign in
                     </a>{" "}

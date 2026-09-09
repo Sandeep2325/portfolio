@@ -34,10 +34,7 @@ insert into public.site_navigation (href, label, sort_order) values
   ('/skills', 'Skills', 2),
   ('/experience', 'Experience', 3),
   ('/projects', 'Projects', 4),
-  ('/blog', 'Blog', 5),
-  ('/resume', 'Resume', 6),
-  ('/contact', 'Contact', 7),
-  ('/terminal', 'My Terminal', 8);
+  ('/contact', 'Contact', 5);
 
 insert into public.home_stats (label, value, sort_order) values
   ('Years Building', '4+', 1),
@@ -153,34 +150,3 @@ insert into public.project_stacks (project_id, label, sort_order) values
   (5, 'Redux', 3),
   (5, 'Axios', 4);
 
-insert into public.blog_posts (slug, title, excerpt, read_time, category, image, content, sort_order) values
-  (
-    'ai-in-development',
-    'Leveraging AI in Modern Software Development',
-    'A practical view of how AI-assisted workflows improve code generation, review, testing, and documentation without replacing engineering judgment.',
-    '8 min read',
-    'Development',
-    '/blog/ai-development.jpg',
-    '<h2>Introduction</h2><p>AI has become a practical layer in modern software delivery. It helps developers move faster on research, scaffolding, debugging, and documentation, while still requiring strong product and engineering judgment.</p><h2>Where AI Helps Most</h2><ul><li>Generating boilerplate and accelerating repetitive implementation work</li><li>Supporting code review and surfacing potential issues earlier</li><li>Improving test drafting, debugging, and release confidence</li><li>Making documentation and handoff notes easier to maintain</li></ul><h2>Why Judgment Still Matters</h2><p>The strongest teams use AI as a collaborator, not an autopilot. Architecture, security, product tradeoffs, and maintainability still depend on experienced human decisions.</p><h2>How I Use It</h2><p>I use AI support for planning, code acceleration, and communication, especially when exploring implementation options for React products, APIs, and product workflows. Claude-assisted discovery is particularly useful early in product thinking and iteration.</p><h2>Closing Thought</h2><p>Good AI usage is not about replacing craft. It is about creating more space for better design, clearer decisions, and higher-quality execution.</p>',
-    1
-  ),
-  (
-    'create-react-app-deprecated',
-    'Why Create React App Is Being Deprecated',
-    'Why the React ecosystem moved on from CRA and what modern teams gain from frameworks like Next.js and newer tooling.',
-    '6 min read',
-    'React',
-    '/blog/cra-deprecated.png',
-    '<h2>Introduction</h2><p>Create React App helped standardize React project setup for years, but the ecosystem has shifted toward faster tooling and more capable frameworks.</p><h2>What Changed</h2><ul><li>Developers expect faster local feedback loops and better bundlers</li><li>TypeScript and ESM-based workflows are now mainstream</li><li>Frameworks increasingly provide routing, data fetching, and optimization out of the box</li></ul><h2>Why Teams Move On</h2><p>Newer stacks reduce setup friction, improve performance, and give teams stronger defaults for production-grade applications.</p><h2>Where Next.js Fits</h2><p>For teams building modern React products, Next.js offers a stronger foundation for routing, multi-page architecture, server rendering, and performance-focused delivery.</p><h2>Conclusion</h2><p>The deprecation of CRA reflects ecosystem maturity. Today, teams benefit from tools that align more closely with current product needs and deployment expectations.</p>',
-    2
-  );
-
-insert into public.terminal_commands (label, sort_order) values
-  ('about', 1),
-  ('skills', 2),
-  ('experience', 3),
-  ('projects', 4),
-  ('contact', 5),
-  ('react-collab', 6),
-  ('supabase-api', 7),
-  ('claude-workflow', 8);

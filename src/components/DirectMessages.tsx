@@ -4,12 +4,14 @@ import { FormEvent, useEffect, useState } from "react";
 import { browserSupabase } from "@/lib/supabase-browser";
 
 type Message = { id: number; sender_id: string; recipient_id: string; body: string; created_at: string };
+type Contact = { id: string; email: string };
 
 export default function DirectMessages() {
   const [token, setToken] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [admin, setAdmin] = useState(false);
   const [userId, setUserId] = useState("");
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [recipientId, setRecipientId] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -31,6 +33,7 @@ export default function DirectMessages() {
       setMessages(payload.messages);
       setAdmin(payload.admin);
       setUserId(payload.userId);
+      setContacts(payload.contacts || []);
       await supabase.realtime.setAuth(accessToken);
       channel = supabase
         .channel(`direct-messages-${payload.userId}`)
@@ -77,9 +80,6 @@ export default function DirectMessages() {
     );
   }
 
-  const contacts = admin
-    ? Array.from(new Set(messages.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId)))
-    : [];
   const canSend = !(admin && !recipientId) && !sending;
 
   return (
@@ -87,15 +87,15 @@ export default function DirectMessages() {
       <div className="section-heading">
         <div>
           <h2>{admin ? "Admin inbox" : "Message Sandeep"}</h2>
-          <p>{admin ? "Select a guest ID to reply privately." : "This conversation is visible only to you and the portfolio owner."}</p>
+          <p>{admin ? "Select a guest email to reply privately." : "This conversation is visible only to you and the portfolio owner."}</p>
         </div>
       </div>
       {admin && (
         <select value={recipientId} onChange={(event) => setRecipientId(event.target.value)} disabled={sending}>
           <option value="">Choose a guest to reply to</option>
           {contacts.map((contact) => (
-            <option value={contact} key={contact}>
-              {contact.slice(0, 8)}…
+            <option value={contact.id} key={contact.id}>
+              {contact.email}
             </option>
           ))}
         </select>

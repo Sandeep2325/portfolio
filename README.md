@@ -39,14 +39,11 @@ This creates tables for:
 - featured skills
 - experiences and highlights
 - projects and stacks
-- blog posts
-- terminal commands
 - contact submissions
 
 ## Dynamic Site Notes
 
-- Layout, homepage, skills, experience, projects, blog, contact, and terminal pages now read from Supabase on the server.
-- Resume data is also loaded from Supabase through `/api/portfolio`.
+- Layout, homepage, skills, experience, projects, and contact pages now read from Supabase on the server.
 - Contact form submissions go through `/api/contact` and write to Supabase using the server role key, so the secret is not exposed in the browser.
 
 ## Important Security Note

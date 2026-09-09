@@ -52,27 +52,13 @@ export type Project = {
   stack: string[];
 };
 
-export type BlogPostSummary = {
-  slug: string;
-  title: string;
-  excerpt: string;
-  read_time: string;
-  category: string;
-  image: string;
-  content: string;
-  sort_order: number;
-};
-
 export type NavigationItem = {
   href: string;
   label: string;
   sort_order: number;
 };
 
-export type TerminalCommand = {
-  label: string;
-  sort_order: number;
-};
+const REMOVED_NAV_HREFS = new Set(["/blog", "/resume", "/terminal"]);
 
 async function getSupabase() {
   noStore();
@@ -93,13 +79,10 @@ export async function getSiteProfile(): Promise<SiteProfile | null> {
 export async function getNavigation(): Promise<NavigationItem[]> {
   const supabase = await getSupabase();
   const { data, error } = await supabase.from("site_navigation").select("*").order("sort_order");
-  const navigation = (error || !data ? [] : data).map((item) =>
-    item.href === "/terminal" ? { ...item, label: "My Terminal" } : item,
-  );
+  const navigation = (error || !data ? [] : data).filter((item) => !REMOVED_NAV_HREFS.has(item.href));
   const essentials: NavigationItem[] = [
     { href: "/community", label: "Community", sort_order: 997 },
     { href: "/things", label: "My Things", sort_order: 998 },
-    { href: "/terminal", label: "My Terminal", sort_order: 999 },
   ];
   return [...navigation, ...essentials.filter((item) => !navigation.some((navItem) => navItem.href === item.href))].sort(
     (left, right) => left.sort_order - right.sort_order,
@@ -174,41 +157,3 @@ export async function getProjects(): Promise<Project[]> {
   }));
 }
 
-export async function getBlogPosts(): Promise<BlogPostSummary[]> {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase.from("blog_posts").select("*").order("sort_order");
-  if (error || !data) return [];
-  return data.map((post) => ({
-    ...post,
-    image: getPublicAssetUrl(post.image),
-  }));
-}
-
-export async function getBlogPostBySlug(slug: string): Promise<BlogPostSummary | null> {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase.from("blog_posts").select("*").eq("slug", slug).maybeSingle();
-  if (error) return null;
-  if (!data) return null;
-  return {
-    ...data,
-    image: getPublicAssetUrl(data.image),
-  };
-}
-
-export async function getTerminalCommands(): Promise<TerminalCommand[]> {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase.from("terminal_commands").select("*").order("sort_order");
-  if (error || !data || data.length === 0) {
-    return [
-      { label: "about", sort_order: 1 },
-      { label: "skills", sort_order: 2 },
-      { label: "experience", sort_order: 3 },
-      { label: "projects", sort_order: 4 },
-      { label: "contact", sort_order: 5 },
-      { label: "react-collab", sort_order: 6 },
-      { label: "api-work", sort_order: 7 },
-      { label: "claude-workflow", sort_order: 8 },
-    ];
-  }
-  return data;
-}

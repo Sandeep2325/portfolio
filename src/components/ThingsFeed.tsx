@@ -28,6 +28,7 @@ export default function ThingsFeed() {
   const [publishing, setPublishing] = useState(false);
   const [likingId, setLikingId] = useState<number | null>(null);
   const [commentingId, setCommentingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadPosts = async () => {
     setLoading(true);
@@ -135,6 +136,31 @@ export default function ThingsFeed() {
     }
   }
 
+  async function deletePost(postId: number) {
+    if (!isAdmin || deletingId === postId) return;
+    if (!window.confirm("Delete this post? Comments and likes will be removed too.")) return;
+
+    setDeletingId(postId);
+    setMessage("");
+    setPostError("");
+    try {
+      const response = await fetch("/api/things", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ postId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setPostError(data.error || "Could not delete post.");
+        return;
+      }
+      setPosts((current) => current.filter((post) => post.id !== postId));
+      setMessage("Post deleted.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <section className="things-feed">
       <div className="surface composer-intro px-6 py-6">
@@ -193,6 +219,16 @@ export default function ThingsFeed() {
                   <strong>Sandeep Gowda</strong>
                   <p>{date.format(new Date(post.created_at))}</p>
                 </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="post-delete"
+                    disabled={deletingId === post.id}
+                    onClick={() => void deletePost(post.id)}
+                  >
+                    {deletingId === post.id ? "Deleting…" : "Delete"}
+                  </button>
+                )}
               </div>
               <div className="post-body">
                 <h3>{post.title}</h3>

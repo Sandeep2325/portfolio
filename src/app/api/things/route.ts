@@ -46,3 +46,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ post: { ...data, image_url: imagePath ? getPublicAssetUrl(imagePath) : null, comments: [], likes: [] } }, { status: 201 });
   } catch (caught) { return error(caught instanceof Error ? caught.message : "Unexpected server error.", 500); }
 }
+
+export async function DELETE(request: Request) {
+  if (!isSupabaseConfigured()) return error("Things is not configured.", 500);
+  const user = await getAuthenticatedUser(request);
+  if (!user) return error("Please sign in to delete posts.", 401);
+  if (!(await isSuperAdmin(user.id))) return error("Only the portfolio admin can delete posts.", 403);
+
+  const { postId } = (await request.json()) as { postId?: number };
+  if (!postId || !Number.isFinite(postId)) return error("Choose a post to delete.");
+
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data: post, error: loadError } = await supabase.from("things_posts").select("id, image_path").eq("id", postId).maybeSingle();
+    if (loadError) return error(loadError.message, 500);
+    if (!post) return error("Post not found.", 404);
+
+    const { error: deleteError } = await supabase.from("things_posts").delete().eq("id", postId);
+    if (deleteError) return error(deleteError.message, 500);
+
+    if (post.image_path) {
+      await supabase.storage.from(getAssetBucketName()).remove([post.image_path]);
+    }
+
+    return NextResponse.json({ success: true, postId });
+  } catch (caught) {
+    return error(caught instanceof Error ? caught.message : "Unexpected server error.", 500);
+  }
+}

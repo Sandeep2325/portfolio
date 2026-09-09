@@ -34,11 +34,11 @@ export default async function BlogPost({ params }: PageProps) {
 
         <div className="p-8">
           <div className="mb-6 flex items-center gap-4">
-            <span className="rounded-full bg-white/6 px-3 py-1 text-sm text-[var(--accent)]">{post.category}</span>
+            <span className="rounded-full bg-[#f3f6f8] px-3 py-1 text-sm text-[var(--accent)]">{post.category}</span>
             <span className="text-sm text-[var(--muted)]">{post.read_time}</span>
           </div>
 
-          <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">{post.title}</h1>
+          <h1 className="font-display text-4xl font-bold text-[var(--text)] sm:text-5xl">{post.title}</h1>
 
           <div className="article mt-8" dangerouslySetInnerHTML={{ __html: post.content }} />
         </div>

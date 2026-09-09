@@ -85,7 +85,7 @@ export default function ResumePage() {
       <section className="surface flex flex-col gap-4 px-6 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <div>
           <p className="text-sm uppercase tracking-[0.22em] text-[var(--accent)]">Resume</p>
-          <h1 className="font-display text-4xl font-bold text-white">{data?.profile?.name || "Loading..."}</h1>
+          <h1 className="font-display text-4xl font-bold text-[var(--text)]">{data?.profile?.name || "Loading..."}</h1>
           <p className="mt-2 text-[var(--muted)]">ATS-optimized single-column resume with modern presentation.</p>
         </div>
         <button

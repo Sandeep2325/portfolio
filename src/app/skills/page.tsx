@@ -9,7 +9,7 @@ export default async function SkillsPage() {
     <div className="page-shell">
       <section className="surface px-6 py-8 sm:px-8">
         <p className="text-sm uppercase tracking-[0.22em] text-[var(--accent)]">Skills</p>
-        <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">A stack shaped by product delivery, APIs, and modern collaboration.</h1>
+        <h1 className="font-display text-4xl font-bold text-[var(--text)] sm:text-5xl">A stack shaped by product delivery, APIs, and modern collaboration.</h1>
         <p className="mt-5 max-w-3xl text-[var(--muted)]">
           A practical mix of frontend engineering, backend systems, cloud delivery, AI APIs, LLM integration, agent workflows, and creative generation tooling.
         </p>

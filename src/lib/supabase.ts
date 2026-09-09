@@ -2,11 +2,17 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const contactTable = process.env.SUPABASE_CONTACT_TABLE || "contact_submissions";
 const assetBucket = process.env.NEXT_PUBLIC_SUPABASE_ASSET_BUCKET || "portfolio-assets";
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseServiceRoleKey);
+}
+
+export function getSupabaseBrowserConfig() {
+  if (!supabaseUrl || !supabasePublishableKey) return null;
+  return { url: supabaseUrl, key: supabasePublishableKey };
 }
 
 export function getContactTableName() {

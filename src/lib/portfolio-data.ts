@@ -96,10 +96,12 @@ export async function getNavigation(): Promise<NavigationItem[]> {
   const navigation = (error || !data ? [] : data).map((item) =>
     item.href === "/terminal" ? { ...item, label: "My Terminal" } : item,
   );
-  if (navigation.some((item) => item.href === "/terminal")) {
-    return navigation;
-  }
-  return [...navigation, { href: "/terminal", label: "My Terminal", sort_order: 999 }].sort(
+  const essentials: NavigationItem[] = [
+    { href: "/community", label: "Community", sort_order: 997 },
+    { href: "/things", label: "My Things", sort_order: 998 },
+    { href: "/terminal", label: "My Terminal", sort_order: 999 },
+  ];
+  return [...navigation, ...essentials.filter((item) => !navigation.some((navItem) => navItem.href === item.href))].sort(
     (left, right) => left.sort_order - right.sort_order,
   );
 }

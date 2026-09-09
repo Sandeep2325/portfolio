@@ -1,9 +1,7 @@
-import ThingsFeed from "@/components/ThingsFeed";
+import OSPage from "@/components/os/OSPage";
+
+export const dynamic = "force-dynamic";
 
 export default function ThingsPage() {
-  return (
-    <div className="page-shell">
-      <ThingsFeed />
-    </div>
-  );
+  return <OSPage app="things" />;
 }

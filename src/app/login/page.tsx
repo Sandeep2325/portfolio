@@ -53,8 +53,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="page-shell auth-page">
-      <section className="surface auth-card px-6 py-8 sm:px-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0a0a0f] px-4 py-12">
+      <div className="animate-blob pointer-events-none absolute left-1/4 top-1/4 h-[420px] w-[420px] rounded-full bg-blue-500/10 blur-[120px]" />
+      <div className="animate-blob animation-delay-2000 pointer-events-none absolute bottom-1/4 right-1/4 h-[360px] w-[360px] rounded-full bg-purple-500/10 blur-[120px]" />
+      <section className="surface auth-card animate-scale-in relative w-full max-w-md px-6 py-8 sm:px-8">
         {askToMessage ? (
           <div className="post-login-choice">
             <p className="eyebrow">You&apos;re signed in</p>

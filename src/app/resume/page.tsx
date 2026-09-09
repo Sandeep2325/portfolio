@@ -48,6 +48,7 @@ function buildSummary(data: ResumeData | null) {
 
 export default function ResumePage() {
   const [data, setData] = useState<ResumeData | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -65,9 +66,12 @@ export default function ResumePage() {
 
   const handleDownload = async () => {
     const element = document.getElementById("resume-sheet");
-    if (typeof window !== "undefined" && element) {
+    if (typeof window === "undefined" || !element || !data || downloading) return;
+
+    setDownloading(true);
+    try {
       const html2pdf = (await import("html2pdf.js")).default;
-      html2pdf(element, {
+      await html2pdf(element, {
         margin: 0.45,
         filename: "Sandeep_Gowda_ATS_Resume.pdf",
         image: { type: "jpeg", quality: 1 },
@@ -75,6 +79,8 @@ export default function ResumePage() {
         jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy"] },
       });
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -89,10 +95,11 @@ export default function ResumePage() {
           <p className="mt-2 text-[var(--muted)]">ATS-optimized single-column resume with modern presentation.</p>
         </div>
         <button
-          onClick={handleDownload}
-          className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-3 font-semibold text-[#052132] transition hover:bg-[var(--accent-strong)] print:hidden"
+          onClick={() => void handleDownload()}
+          disabled={!data || downloading}
+          className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] px-5 py-3 font-semibold text-[#052132] transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70 print:hidden"
         >
-          <FaDownload /> Download ATS Resume
+          <FaDownload /> {downloading ? "Generating…" : !data ? "Loading…" : "Download ATS Resume"}
         </button>
       </section>
 

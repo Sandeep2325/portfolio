@@ -3,7 +3,15 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { browserSupabase } from "@/lib/supabase-browser";
 
-type Message = { id: number; parent_id: number | null; author_name: string; body: string; is_owner: boolean; created_at: string };
+type Message = {
+  id: number;
+  parent_id: number | null;
+  author_name: string;
+  body: string;
+  image_url?: string | null;
+  is_owner: boolean;
+  created_at: string;
+};
 
 export default function CommunityWall() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -34,21 +42,16 @@ export default function CommunityWall() {
     if (replyTo !== null) replyInputRef.current?.focus();
   }, [replyTo]);
 
-  async function publish(options: {
-    body: string;
-    authorName: string;
-    parentId: number | null;
-    form: HTMLFormElement;
-  }) {
+  async function publish(form: HTMLFormElement, parentId: number | null) {
     setError("");
+    const payload = new FormData(form);
+    if (parentId !== null) payload.set("parentId", String(parentId));
+    else payload.delete("parentId");
+
     const response = await fetch("/api/community", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({
-        body: options.body,
-        authorName: options.authorName,
-        parentId: options.parentId,
-      }),
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: payload,
     });
     const data = await response.json();
     if (!response.ok) {
@@ -56,7 +59,7 @@ export default function CommunityWall() {
       return false;
     }
     setMessages((current) => [data.message, ...current]);
-    options.form.reset();
+    form.reset();
     setReplyTo(null);
     return true;
   }
@@ -66,14 +69,7 @@ export default function CommunityWall() {
     if (sending || !accessToken) return;
     setSending(true);
     try {
-      const form = event.currentTarget;
-      const data = new FormData(form);
-      await publish({
-        body: String(data.get("message") || ""),
-        authorName: String(data.get("name") || ""),
-        parentId: null,
-        form,
-      });
+      await publish(event.currentTarget, null);
     } finally {
       setSending(false);
     }
@@ -84,14 +80,7 @@ export default function CommunityWall() {
     if (replySending || !accessToken) return;
     setReplySending(true);
     try {
-      const form = event.currentTarget;
-      const data = new FormData(form);
-      await publish({
-        body: String(data.get("reply") || ""),
-        authorName: String(data.get("name") || ""),
-        parentId,
-        form,
-      });
+      await publish(event.currentTarget, parentId);
     } finally {
       setReplySending(false);
     }
@@ -127,13 +116,16 @@ export default function CommunityWall() {
           <input name="name" maxLength={40} placeholder="Your display name (optional)" disabled={!accessToken || sending} />
         </div>
         <textarea
-          name="message"
-          required
+          name="body"
           disabled={!accessToken || sending}
           maxLength={1000}
           rows={3}
           placeholder={accessToken ? "Write a new message…" : "Sign in to write a message"}
         />
+        <label className="community-image-field">
+          <span>Photo (optional — upload or take a photo, max 20 MB)</span>
+          <input name="image" type="file" accept="image/*" disabled={!accessToken || sending} />
+        </label>
         <button className="primary-button" disabled={!accessToken || sending} type="submit">
           {sending ? "Posting…" : "Post message"}
         </button>
@@ -159,7 +151,8 @@ export default function CommunityWall() {
                     {message.is_owner && <span className="owner-badge">Owner</span>}
                     <time>{date.format(new Date(message.created_at))}</time>
                   </div>
-                  <p>{message.body}</p>
+                  {message.body.trim() ? <p>{message.body}</p> : null}
+                  {message.image_url ? <img src={message.image_url} alt="" className="community-image" /> : null}
 
                   {!isReplying && (
                     <button type="button" className="reply-button" onClick={() => startReply(message.id)}>
@@ -174,7 +167,8 @@ export default function CommunityWall() {
                         <strong>{reply.author_name}</strong>
                         {reply.is_owner && <span className="owner-badge">Owner</span>}
                         <time>{date.format(new Date(reply.created_at))}</time>
-                        <p>{reply.body}</p>
+                        {reply.body.trim() ? <p>{reply.body}</p> : null}
+                        {reply.image_url ? <img src={reply.image_url} alt="" className="community-image" /> : null}
                       </div>
                     </div>
                   ))}
@@ -197,13 +191,16 @@ export default function CommunityWall() {
                       />
                       <textarea
                         ref={replyInputRef}
-                        name="reply"
-                        required
+                        name="body"
                         disabled={!accessToken || replySending}
                         maxLength={1000}
                         rows={2}
                         placeholder={`Reply to ${replyTarget?.author_name || "this message"}…`}
                       />
+                      <label className="community-image-field">
+                        <span>Photo (optional, max 20 MB)</span>
+                        <input name="image" type="file" accept="image/*" disabled={!accessToken || replySending} />
+                      </label>
                       <div className="inline-reply-actions">
                         <button className="primary-button" disabled={!accessToken || replySending} type="submit">
                           {replySending ? "Sending…" : "Send reply"}

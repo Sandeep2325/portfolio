@@ -38,9 +38,12 @@ create table if not exists public.community_messages (
   parent_id bigint references public.community_messages(id) on delete cascade,
   author_name text not null default 'Ghost' check (char_length(author_name) between 1 and 40),
   body text not null check (char_length(body) between 1 and 1000),
+  image_path text,
   is_owner boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.community_messages add column if not exists image_path text;
 
 create index if not exists community_messages_created_at_idx on public.community_messages (created_at desc);
 create index if not exists community_messages_parent_id_idx on public.community_messages (parent_id, created_at asc);

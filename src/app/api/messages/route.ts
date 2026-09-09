@@ -1,59 +1,8 @@
 import { NextResponse } from "next/server";
 import { OWNER_DISPLAY_NAME, getAdminUserId, getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
-import { createServerSupabaseClient, getAssetBucketName, getPublicAssetUrl, isSupabaseConfigured } from "@/lib/supabase";
-
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
-
-type DirectMessage = {
-  id: number;
-  sender_id: string;
-  recipient_id: string;
-  body: string;
-  image_path?: string | null;
-  read_at?: string | null;
-  created_at: string;
-};
-
-export type Contact = {
-  id: string;
-  email: string;
-  username: string | null;
-  /** What the UI shows: username when claimed, otherwise the email. */
-  label: string;
-  lastSeenAt: string | null;
-};
-
-function withImageUrl<T extends { image_path?: string | null }>(message: T) {
-  return { ...message, image_url: message.image_path ? getPublicAssetUrl(message.image_path) : null };
-}
-
-async function resolveContacts(userIds: string[]): Promise<Contact[]> {
-  if (userIds.length === 0) return [];
-
-  const supabase = createServerSupabaseClient();
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, username, last_seen_at")
-    .in("id", userIds);
-
-  const byId = new Map((profiles || []).map((profile) => [profile.id as string, profile]));
-
-  return Promise.all(
-    userIds.map(async (id) => {
-      const profile = byId.get(id);
-      const { data, error } = await supabase.auth.admin.getUserById(id);
-      const email = error || !data.user?.email ? `${id.slice(0, 8)}…` : data.user.email;
-      const username = (profile?.username as string | null) || null;
-      return {
-        id,
-        email,
-        username,
-        label: username || email,
-        lastSeenAt: (profile?.last_seen_at as string | null) || null,
-      };
-    }),
-  );
-}
+import { createServerSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { DM_ATTACHMENT_BUCKET, MAX_ATTACHMENT_SIZE, extensionOf, resolveKind, type AttachmentKind } from "@/lib/attachments";
+import { resolveContacts, signAttachments, type Contact, type DirectMessageRow } from "@/lib/dm-server";
 
 export async function GET(request: Request) {
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Messages are not configured." }, { status: 500 });
@@ -72,14 +21,14 @@ export async function GET(request: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const messages = (data || []) as DirectMessage[];
+    const rows = (data || []) as DirectMessageRow[];
     let contacts: Contact[] = [];
     let owner: { id: string; label: string; lastSeenAt: string | null } | null = null;
 
     if (admin) {
       const { data: guests } = await supabase.from("profiles").select("id").eq("is_super_admin", false);
       const guestIds = (guests || []).map((guest) => guest.id);
-      const peerIdsFromMessages = messages
+      const peerIdsFromMessages = rows
         .flatMap((message) => [message.sender_id, message.recipient_id])
         .filter((id) => id !== user.id);
       const peerIds = Array.from(new Set([...guestIds, ...peerIdsFromMessages]));
@@ -100,7 +49,13 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ messages: messages.map(withImageUrl), admin, userId: user.id, contacts, owner });
+    return NextResponse.json({
+      messages: await signAttachments(rows),
+      admin,
+      userId: user.id,
+      contacts,
+      owner,
+    });
   } catch (caught) {
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
   }
@@ -114,17 +69,26 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const message = String(form.get("body") || "").trim();
   const recipientId = String(form.get("recipientId") || "");
-  const image = form.get("image");
-  const hasImage = image instanceof File && image.size > 0;
+  const durationMs = Number(form.get("durationMs") || 0);
+  const upload = form.get("attachment") ?? form.get("image");
+  const file = upload instanceof File && upload.size > 0 ? upload : null;
 
-  if (!message && !hasImage) {
-    return NextResponse.json({ error: "Enter a message or attach an image." }, { status: 400 });
+  if (!message && !file) {
+    return NextResponse.json({ error: "Enter a message or attach a file." }, { status: 400 });
   }
   if (message.length > 2000) {
     return NextResponse.json({ error: "Enter a message of up to 2,000 characters." }, { status: 400 });
   }
-  if (hasImage && (!image.type.startsWith("image/") || image.size > MAX_IMAGE_SIZE)) {
-    return NextResponse.json({ error: "Attach a supported image smaller than 20 MB." }, { status: 400 });
+
+  let kind: AttachmentKind | null = null;
+  if (file) {
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      return NextResponse.json({ error: "Attachments must be smaller than 20 MB." }, { status: 400 });
+    }
+    kind = resolveKind(file.type, file.name);
+    if (!kind) {
+      return NextResponse.json({ error: "That file type is not supported." }, { status: 400 });
+    }
   }
 
   try {
@@ -142,8 +106,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
     }
 
+    const supabase = createServerSupabaseClient();
+
     if (admin) {
-      const { data: profile } = await createServerSupabaseClient()
+      const { data: profile } = await supabase
         .from("profiles")
         .select("id, is_super_admin")
         .eq("id", target)
@@ -153,27 +119,37 @@ export async function POST(request: Request) {
       }
     }
 
-    const supabase = createServerSupabaseClient();
-    let imagePath: string | null = null;
-
-    if (hasImage) {
-      const extension = image.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "jpg";
-      imagePath = `dm/${crypto.randomUUID()}.${extension}`;
+    let attachment: Partial<DirectMessageRow> = {};
+    if (file && kind) {
+      const extension = extensionOf(file.name) || (kind === "audio" ? "webm" : "bin");
+      const path = `${user.id}/${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage
-        .from(getAssetBucketName())
-        .upload(imagePath, image, { contentType: image.type, upsert: false });
+        .from(DM_ATTACHMENT_BUCKET)
+        .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
       if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
+
+      attachment = {
+        attachment_bucket: DM_ATTACHMENT_BUCKET,
+        attachment_path: path,
+        attachment_kind: kind,
+        attachment_name: file.name.slice(0, 200),
+        attachment_mime: file.type || null,
+        attachment_size: file.size,
+        attachment_duration_ms: kind === "audio" && Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs) : null,
+      };
     }
 
     const { data, error } = await supabase
       .from("direct_messages")
-      // An image-only message stores a single space to satisfy the body length check.
-      .insert({ sender_id: user.id, recipient_id: target, body: message || " ", image_path: imagePath })
+      // An attachment-only message stores a single space to satisfy the body length check.
+      .insert({ sender_id: user.id, recipient_id: target, body: message || " ", ...attachment })
       .select()
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ message: withImageUrl(data as DirectMessage) }, { status: 201 });
+
+    const [signed] = await signAttachments([data as DirectMessageRow]);
+    return NextResponse.json({ message: signed }, { status: 201 });
   } catch (caught) {
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
   }

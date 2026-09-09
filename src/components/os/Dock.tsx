@@ -7,9 +7,11 @@ interface DockProps {
   onAppClick: (id: AppId) => void;
   onSearchClick: () => void;
   activeApps: AppId[];
+  /** Unread counts keyed by app id, rendered as a badge on the icon. */
+  badges?: Partial<Record<AppId, number>>;
 }
 
-export default function Dock({ onAppClick, onSearchClick, activeApps }: DockProps) {
+export default function Dock({ onAppClick, onSearchClick, activeApps, badges }: DockProps) {
   return (
     <div className="fixed bottom-2 left-1/2 z-[100] -translate-x-1/2 px-2 md:bottom-4 md:px-0">
       <div className="glass-dock scrollbar-hide flex max-w-[96vw] gap-1.5 overflow-x-auto px-2 py-2 md:gap-3 md:px-4 md:py-3">
@@ -25,6 +27,10 @@ export default function Dock({ onAppClick, onSearchClick, activeApps }: DockProp
             }}
           >
             <app.icon className="text-lg text-gray-300 transition-transform duration-200 group-hover:scale-110 group-hover:text-white md:text-2xl" />
+
+            {(badges?.[app.id] ?? 0) > 0 && (
+              <span className="dock-badge">{Math.min(99, badges?.[app.id] ?? 0)}</span>
+            )}
 
             {activeApps.includes(app.id) && (
               <span className="absolute -bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-[#4da8ff]" />

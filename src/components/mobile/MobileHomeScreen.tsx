@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { APP_CONFIGS, type AppId } from "@/lib/os-apps";
 import type { OSData } from "@/lib/os-data";
+import type { UnreadItem } from "@/hooks/useDirectMessageNotifications";
 import { useMobileAppManager } from "@/hooks/useMobileAppManager";
 import { useAppRouteSync } from "@/hooks/useAppRouteSync";
 import { useAuthSession } from "@/hooks/useAuthSession";
@@ -12,9 +13,18 @@ import MobileAppSwitcher from "./MobileAppSwitcher";
 import MobileAppWindow from "./MobileAppWindow";
 import MobileNavigationBar from "./MobileNavigationBar";
 import MobileStatusBar from "./MobileStatusBar";
+import MessageToast from "@/components/os/MessageToast";
 import { cn } from "@/lib/utils";
 
-export default function MobileHomeScreen({ data, initialApp }: { data: OSData; initialApp: AppId | null }) {
+interface MobileHomeScreenProps {
+  data: OSData;
+  initialApp: AppId | null;
+  unreadCount: number;
+  toast: UnreadItem | null;
+  onDismissToast: () => void;
+}
+
+export default function MobileHomeScreen({ data, initialApp, unreadCount, toast, onDismissToast }: MobileHomeScreenProps) {
   const {
     apps,
     openApps,
@@ -95,12 +105,15 @@ export default function MobileHomeScreen({ data, initialApp }: { data: OSData; i
               >
                 <span
                   className={cn(
-                    "flex h-16 w-16 items-center justify-center rounded-2xl border border-white/20",
+                    "relative flex h-16 w-16 items-center justify-center rounded-2xl border border-white/20",
                     "bg-gradient-to-br from-white/20 to-white/10 shadow-lg transition-all",
                     apps[app.id].isOpen && "ring-2 ring-blue-500/50",
                   )}
                 >
                   <app.icon className="h-8 w-8 text-white" />
+                  {app.id === "messages" && unreadCount > 0 && (
+                    <span className="dock-badge">{Math.min(99, unreadCount)}</span>
+                  )}
                 </span>
                 <span className="text-center text-[11px] font-medium text-white/80">{app.name.replace(".app", "")}</span>
               </button>
@@ -156,6 +169,8 @@ export default function MobileHomeScreen({ data, initialApp }: { data: OSData; i
           onClose={() => setSwitcherOpen(false)}
         />
       )}
+
+      <MessageToast item={toast} onOpen={() => handleAppClick("messages")} onDismiss={onDismissToast} />
 
       <MobileNavigationBar
         hasCurrentApp={Boolean(currentApp)}

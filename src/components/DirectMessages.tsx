@@ -1,31 +1,60 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HiOutlinePhoto } from "react-icons/hi2";
-import { browserSupabase, publicAssetUrl } from "@/lib/supabase-browser";
+import { HiOutlinePhoto, HiOutlinePaperClip, HiOutlineMicrophone, HiOutlineStop, HiOutlineBellAlert } from "react-icons/hi2";
+import { browserSupabase } from "@/lib/supabase-browser";
 import { useConversationChannel } from "@/hooks/useConversationChannel";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { isRecentlyActive, relativeTime } from "@/lib/relative-time";
+import {
+  FILE_INPUT_ACCEPT,
+  MAX_ATTACHMENT_SIZE,
+  formatBytes,
+  formatDuration,
+  resolveKind,
+  type AttachmentKind,
+} from "@/lib/attachments";
+import MessageAttachment, { type MessageAttachmentData } from "./MessageAttachment";
 
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const PRESENCE_POLL_MS = 60_000;
+/** Signed URLs last an hour; refresh a little before that. */
+const RESIGN_INTERVAL_MS = 50 * 60_000;
 
 type Message = {
   id: number;
   sender_id: string;
   recipient_id: string;
   body: string;
-  image_path?: string | null;
-  image_url?: string | null;
+  attachment_path?: string | null;
+  attachment_kind?: AttachmentKind | null;
+  attachment_name?: string | null;
+  attachment_mime?: string | null;
+  attachment_size?: number | null;
+  attachment_duration_ms?: number | null;
+  attachment?: MessageAttachmentData | null;
   read_at?: string | null;
   created_at: string;
 };
 
 type Contact = { id: string; email: string; username: string | null; label: string; lastSeenAt: string | null };
 type Owner = { id: string; label: string; lastSeenAt: string | null };
+type Pending = { file: File; kind: AttachmentKind; previewUrl: string | null; durationMs: number | null };
 
-/** Realtime rows carry image_path only, so derive the URL when it is missing. */
-function withImageUrl(message: Message): Message {
-  return { ...message, image_url: message.image_url ?? publicAssetUrl(message.image_path) };
+/** Realtime rows arrive as raw columns; rebuild the attachment shape the UI uses. */
+function hydrate(row: Message): Message {
+  if (row.attachment) return row;
+  if (!row.attachment_path) return { ...row, attachment: null };
+  return {
+    ...row,
+    attachment: {
+      url: null,
+      kind: row.attachment_kind || "file",
+      name: row.attachment_name || "attachment",
+      mime: row.attachment_mime || "",
+      size: row.attachment_size || 0,
+      durationMs: row.attachment_duration_ms || null,
+    },
+  };
 }
 
 export default function DirectMessages() {
@@ -39,16 +68,48 @@ export default function DirectMessages() {
   const [peerLastSeen, setPeerLastSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const [attachment, setAttachment] = useState<File | null>(null);
-  const [attachmentUrl, setAttachmentUrl] = useState("");
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [notifyPermission, setNotifyPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
+
+  const recorder = useAudioRecorder();
 
   const peerId = admin ? recipientId : owner?.id || "";
   const selectedContact = contacts.find((contact) => contact.id === recipientId);
   const peerLabel = admin ? selectedContact?.label || "guest" : owner?.label || "Sandeep Gowda";
 
   const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
+
+  useEffect(() => {
+    if (typeof Notification !== "undefined") setNotifyPermission(Notification.permission);
+  }, []);
+
+  /** Fetches fresh signed URLs for the given messages. */
+  const signAttachments = useCallback(
+    async (ids: number[], accessToken: string) => {
+      if (ids.length === 0 || !accessToken) return;
+      try {
+        const response = await fetch("/api/messages/attachments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ ids }),
+        });
+        if (!response.ok) return;
+        const { urls } = (await response.json()) as { urls: Record<string, string> };
+        setMessages((current) =>
+          current.map((item) =>
+            item.attachment && urls[item.id] ? { ...item, attachment: { ...item.attachment, url: urls[item.id] } } : item,
+          ),
+        );
+      } catch {
+        // Attachment shows as unavailable until the next refresh.
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!browserSupabase) return;
@@ -67,7 +128,7 @@ export default function DirectMessages() {
         return;
       }
 
-      setMessages((payload.messages as Message[]).map(withImageUrl));
+      setMessages((payload.messages as Message[]).map(hydrate));
       setAdmin(payload.admin);
       setUserId(payload.userId);
       setContacts(payload.contacts || []);
@@ -78,8 +139,10 @@ export default function DirectMessages() {
       channel = supabase
         .channel(`direct-messages-${payload.userId}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, (event) => {
-          const message = withImageUrl(event.new as Message);
+          const message = hydrate(event.new as Message);
           setMessages((current) => (current.some((item) => item.id === message.id) ? current : [...current, message]));
+          // Realtime carries the storage path, never a usable URL.
+          if (message.attachment) void signAttachments([message.id], accessToken);
         })
         // Read receipts: the peer stamping read_at arrives as an UPDATE.
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, (event) => {
@@ -94,9 +157,18 @@ export default function DirectMessages() {
     return () => {
       if (channel) void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [signAttachments]);
 
-  // Track the selected guest's last-seen when the admin switches conversation.
+  // Signed URLs expire, so re-sign everything still on screen periodically.
+  useEffect(() => {
+    if (!token) return;
+    const timer = setInterval(() => {
+      const ids = messages.filter((message) => message.attachment).map((message) => message.id);
+      void signAttachments(ids, token);
+    }, RESIGN_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [token, messages, signAttachments]);
+
   useEffect(() => {
     if (!admin) return;
     setPeerLastSeen(selectedContact?.lastSeenAt || null);
@@ -105,8 +177,8 @@ export default function DirectMessages() {
   // Poll the peer's last-seen so "last seen" stays honest without a page reload.
   useEffect(() => {
     if (!token || !peerId) return;
-
     let cancelled = false;
+
     const poll = async () => {
       try {
         const response = await fetch(`/api/presence?userId=${peerId}`, {
@@ -135,7 +207,6 @@ export default function DirectMessages() {
     return messages.filter((message) => message.sender_id === recipientId || message.recipient_id === recipientId);
   }, [admin, messages, recipientId]);
 
-  // Mark the peer's messages read while this conversation is on screen.
   const markRead = useCallback(async () => {
     if (!token || !peerId || document.visibilityState !== "visible") return;
     const unread = visibleMessages.filter((message) => message.sender_id === peerId && !message.read_at);
@@ -167,32 +238,50 @@ export default function DirectMessages() {
     listEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [visibleMessages.length, peerTyping]);
 
-  // Keep the local preview URL in step with the chosen file.
+  // A finished recording becomes the pending attachment.
   useEffect(() => {
-    if (!attachment) {
-      setAttachmentUrl("");
-      return;
-    }
-    const objectUrl = URL.createObjectURL(attachment);
-    setAttachmentUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [attachment]);
+    if (!recorder.clip) return;
+    const extension = recorder.clip.mime.includes("mp4") ? "m4a" : "webm";
+    const file = new File([recorder.clip.blob], `voice-message.${extension}`, { type: recorder.clip.mime });
+    setPending({ file, kind: "audio", previewUrl: recorder.clip.url, durationMs: recorder.clip.durationMs });
+  }, [recorder.clip]);
 
-  function chooseAttachment(event: React.ChangeEvent<HTMLInputElement>) {
+  function choose(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/") || file.size > MAX_IMAGE_SIZE) {
-      setError("Attach a supported image smaller than 20 MB.");
-      event.target.value = "";
+
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      setError("Attachments must be smaller than 20 MB.");
       return;
     }
+    const kind = resolveKind(file.type, file.name);
+    if (!kind) {
+      setError("That file type is not supported.");
+      return;
+    }
+
     setError("");
-    setAttachment(file);
+    recorder.discard();
+    setPending({
+      file,
+      kind,
+      previewUrl: kind === "image" ? URL.createObjectURL(file) : null,
+      durationMs: null,
+    });
   }
 
-  function clearAttachment() {
-    setAttachment(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  const clearPending = useCallback(() => {
+    setPending((current) => {
+      if (current?.previewUrl && current.kind === "image") URL.revokeObjectURL(current.previewUrl);
+      return null;
+    });
+    recorder.discard();
+  }, [recorder]);
+
+  async function enableNotifications() {
+    if (typeof Notification === "undefined") return;
+    setNotifyPermission(await Notification.requestPermission());
   }
 
   async function send(event: FormEvent<HTMLFormElement>) {
@@ -205,8 +294,8 @@ export default function DirectMessages() {
 
     const formElement = event.currentTarget;
     const text = String(new FormData(formElement).get("message") || "").trim();
-    if (!text && !attachment) {
-      setError("Write a message or attach an image.");
+    if (!text && !pending) {
+      setError("Write a message or attach something.");
       return;
     }
 
@@ -217,7 +306,10 @@ export default function DirectMessages() {
       const payload = new FormData();
       payload.set("body", text);
       payload.set("recipientId", recipientId);
-      if (attachment) payload.set("image", attachment);
+      if (pending) {
+        payload.set("attachment", pending.file);
+        if (pending.durationMs) payload.set("durationMs", String(pending.durationMs));
+      }
 
       const response = await fetch("/api/messages", {
         method: "POST",
@@ -230,10 +322,10 @@ export default function DirectMessages() {
         return;
       }
 
-      const message = withImageUrl(data.message as Message);
+      const message = hydrate(data.message as Message);
       setMessages((current) => (current.some((item) => item.id === message.id) ? current : [...current, message]));
       formElement.reset();
-      clearAttachment();
+      clearPending();
     } finally {
       setSending(false);
     }
@@ -243,7 +335,9 @@ export default function DirectMessages() {
     return (
       <section className="surface px-6 py-8">
         <h2 className="font-display text-xl font-semibold">Sign in to use direct messages</h2>
-        <p className="mt-2 text-[var(--muted)]">Guest accounts can send a private message — with photos — directly to Sandeep.</p>
+        <p className="mt-2 text-[var(--muted)]">
+          Guest accounts can send private messages, photos, voice notes and documents directly to Sandeep.
+        </p>
       </section>
     );
   }
@@ -251,6 +345,8 @@ export default function DirectMessages() {
   const blocked = admin && !recipientId;
   const active = peerOnline || isRecentlyActive(peerLastSeen);
   const lastSeenLabel = relativeTime(peerLastSeen);
+  const recording = recorder.state === "recording" || recorder.state === "requesting";
+  const composerDisabled = sending || blocked;
 
   return (
     <section className="surface messages-panel px-6 py-7 sm:px-8">
@@ -277,6 +373,13 @@ export default function DirectMessages() {
         </div>
       </div>
 
+      {notifyPermission === "default" && (
+        <button type="button" className="dm-notify-cta" onClick={() => void enableNotifications()}>
+          <HiOutlineBellAlert className="h-4 w-4" />
+          Turn on notifications for new messages
+        </button>
+      )}
+
       {admin && (
         <select value={recipientId} onChange={(event) => setRecipientId(event.target.value)} disabled={sending}>
           <option value="">Choose a guest to message</option>
@@ -302,12 +405,7 @@ export default function DirectMessages() {
             return (
               <div className={outgoing ? "dm outgoing" : "dm incoming"} key={message.id}>
                 {message.body.trim() ? <p>{message.body}</p> : null}
-                {message.image_url ? (
-                  <a href={message.image_url} target="_blank" rel="noreferrer">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={message.image_url} alt="Attachment" className="dm-image" />
-                  </a>
-                ) : null}
+                {message.attachment ? <MessageAttachment attachment={message.attachment} /> : null}
                 <time>
                   {new Date(message.created_at).toLocaleString()}
                   {outgoing && (
@@ -341,35 +439,89 @@ export default function DirectMessages() {
           placeholder={
             admin ? (recipientId ? `Message ${peerLabel}…` : "Choose a guest above to message…") : "Write a private message…"
           }
-          disabled={sending || blocked}
+          disabled={composerDisabled}
           onChange={notifyTyping}
           onBlur={stopTyping}
         />
 
-        {attachment && attachmentUrl && (
+        {recording && (
+          <div className="dm-recording" role="status">
+            <span className="dm-recording-dot" />
+            <span className="dm-recording-time">{formatDuration(recorder.elapsedMs)}</span>
+            <span className="dm-level">
+              {Array.from({ length: 14 }).map((_, index) => (
+                <i
+                  key={index}
+                  style={{
+                    transform: `scaleY(${
+                      0.2 + Math.min(1, Math.max(0, recorder.level * 2 - Math.abs(index - 6.5) / 9)) * 0.8
+                    })`,
+                  }}
+                />
+              ))}
+            </span>
+            <button type="button" className="dm-recording-stop" onClick={recorder.stop}>
+              <HiOutlineStop className="h-4 w-4" />
+              Stop
+            </button>
+            <button type="button" className="dm-recording-cancel" onClick={recorder.discard}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {pending && !recording && (
           <div className="dm-preview">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={attachmentUrl} alt="Selected attachment" />
-            <span>{attachment.name}</span>
-            <button type="button" onClick={clearAttachment} disabled={sending}>
+            {pending.kind === "image" && pending.previewUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={pending.previewUrl} alt="Selected attachment" />
+            ) : pending.kind === "audio" && pending.previewUrl ? (
+              <audio controls src={pending.previewUrl} className="dm-audio-player" />
+            ) : (
+              <span className="dm-preview-icon">
+                <HiOutlinePaperClip className="h-5 w-5" />
+              </span>
+            )}
+            <span>
+              {pending.kind === "audio" ? `Voice message · ${formatDuration(pending.durationMs)}` : pending.file.name}
+              {pending.kind !== "audio" ? ` · ${formatBytes(pending.file.size)}` : ""}
+            </span>
+            <button type="button" onClick={clearPending} disabled={sending}>
               Remove
             </button>
           </div>
         )}
 
+        {recorder.error && <p className="feed-error">{recorder.error}</p>}
+
         <div className="dm-form-footer">
-          <label className="dm-attach">
-            <HiOutlinePhoto className="h-4 w-4" />
-            {attachment ? "Change photo" : "Add photo"}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={chooseAttachment}
-              disabled={sending || blocked}
-            />
-          </label>
-          <button className="primary-button" disabled={sending || blocked} type="submit">
+          <div className="dm-tools">
+            <label className="dm-attach" aria-disabled={composerDisabled}>
+              <HiOutlinePhoto className="h-4 w-4" />
+              Photo
+              <input ref={imageInputRef} type="file" accept="image/*" onChange={choose} disabled={composerDisabled} />
+            </label>
+
+            <label className="dm-attach" aria-disabled={composerDisabled}>
+              <HiOutlinePaperClip className="h-4 w-4" />
+              File
+              <input ref={fileInputRef} type="file" accept={FILE_INPUT_ACCEPT} onChange={choose} disabled={composerDisabled} />
+            </label>
+
+            {recorder.supported && !recording && (
+              <button
+                type="button"
+                className="dm-attach"
+                onClick={() => void recorder.start()}
+                disabled={composerDisabled}
+              >
+                <HiOutlineMicrophone className="h-4 w-4" />
+                {pending?.kind === "audio" ? "Re-record" : "Voice"}
+              </button>
+            )}
+          </div>
+
+          <button className="primary-button" disabled={composerDisabled || recording} type="submit">
             {sending ? "Sending…" : "Send"}
           </button>
         </div>

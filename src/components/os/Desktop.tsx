@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_CONFIGS, type AppId } from "@/lib/os-apps";
 import type { OSData } from "@/lib/os-data";
+import type { UnreadItem } from "@/hooks/useDirectMessageNotifications";
 import { useWindowManager } from "@/hooks/useWindowManager";
 import { useAppRouteSync } from "@/hooks/useAppRouteSync";
 import AppContent from "@/components/apps/AppContent";
@@ -12,10 +13,19 @@ import CursorEffect from "./CursorEffect";
 import Dock from "./Dock";
 import FloatingTechIcons from "./FloatingTechIcons";
 import GradientMesh from "./GradientMesh";
+import MessageToast from "./MessageToast";
 import TopBar from "./TopBar";
 import Window from "./Window";
 
-export default function Desktop({ data, initialApp }: { data: OSData; initialApp: AppId | null }) {
+interface DesktopProps {
+  data: OSData;
+  initialApp: AppId | null;
+  unreadCount: number;
+  toast: UnreadItem | null;
+  onDismissToast: () => void;
+}
+
+export default function Desktop({ data, initialApp, unreadCount, toast, onDismissToast }: DesktopProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const {
     windows,
@@ -159,7 +169,14 @@ export default function Desktop({ data, initialApp }: { data: OSData; initialApp
 
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} onAppOpen={handleAppClick} />
 
-      <Dock onAppClick={handleAppClick} onSearchClick={() => setPaletteOpen((open) => !open)} activeApps={activeApps} />
+      <MessageToast item={toast} onOpen={() => handleAppClick("messages")} onDismiss={onDismissToast} />
+
+      <Dock
+        onAppClick={handleAppClick}
+        onSearchClick={() => setPaletteOpen((open) => !open)}
+        activeApps={activeApps}
+        badges={{ messages: unreadCount }}
+      />
     </div>
   );
 }

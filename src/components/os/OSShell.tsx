@@ -6,6 +6,7 @@ import type { OSData } from "@/lib/os-data";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
+import { useDirectMessageNotifications } from "@/hooks/useDirectMessageNotifications";
 import BootScreen from "./BootScreen";
 import Desktop from "./Desktop";
 import UsernamePrompt from "./UsernamePrompt";
@@ -39,6 +40,8 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
   const [booted, setBooted] = useState(false);
   const [checkedBootFlag, setCheckedBootFlag] = useState(false);
   const { token, profile, refresh } = useViewerProfile();
+
+  const { unreadCount, toast, dismissToast } = useDirectMessageNotifications();
 
   usePresenceHeartbeat();
 
@@ -74,9 +77,21 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
   return (
     <>
       {isMobile ? (
-        <MobileHomeScreen data={data} initialApp={initialApp} />
+        <MobileHomeScreen
+          data={data}
+          initialApp={initialApp}
+          unreadCount={unreadCount}
+          toast={toast}
+          onDismissToast={dismissToast}
+        />
       ) : (
-        <Desktop data={data} initialApp={initialApp} />
+        <Desktop
+          data={data}
+          initialApp={initialApp}
+          unreadCount={unreadCount}
+          toast={toast}
+          onDismissToast={dismissToast}
+        />
       )}
 
       {profile?.needsUsername && <UsernamePrompt token={token} email={profile.email} onClaimed={refresh} />}

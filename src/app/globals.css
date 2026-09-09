@@ -1113,6 +1113,318 @@ body {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* Attachments in the thread */
+.dm-audio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.dm-audio-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  background: hsl(207 100% 65% / 0.2);
+  color: hsl(207 100% 75%);
+}
+
+.dm-audio-player {
+  height: 2.1rem;
+  max-width: 220px;
+  flex: 1;
+  /* Ask Chrome for the dark variant of its built-in audio controls. */
+  color-scheme: dark;
+}
+
+.dm-audio-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-file {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.55rem;
+  background: hsl(220 15% 12% / 0.6);
+  padding: 0.55rem 0.65rem;
+  transition: border-color 0.2s ease;
+}
+
+.dm-file:hover {
+  border-color: hsl(207 100% 65% / 0.5);
+}
+
+.dm-file-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.4rem;
+  background: hsl(207 100% 65% / 0.18);
+  color: hsl(207 100% 75%);
+}
+
+.dm-file-meta {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.dm-file-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.dm-file-meta em {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.dm-attachment-pending {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+/* Composer tools */
+.dm-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dm-attach[aria-disabled="true"],
+.dm-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dm-preview-icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  border-radius: 0.4rem;
+  background: hsl(207 100% 65% / 0.15);
+  color: hsl(207 100% 75%);
+}
+
+.dm-preview .dm-audio-player {
+  max-width: 200px;
+}
+
+/* Recording bar */
+.dm-recording {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid hsl(0 84% 60% / 0.35);
+  border-radius: 0.6rem;
+  background: hsl(0 84% 60% / 0.08);
+  padding: 0.55rem 0.7rem;
+}
+
+.dm-recording-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: #ef4444;
+  animation: pulseRecord 1.2s ease-in-out infinite;
+}
+
+@keyframes pulseRecord {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.dm-recording-time {
+  flex-shrink: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-level {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  height: 1.5rem;
+  min-width: 60px;
+}
+
+.dm-level i {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, hsl(207 100% 65%), hsl(270 100% 67%));
+  transform-origin: center;
+  transition: transform 80ms linear;
+}
+
+.dm-recording-stop,
+.dm-recording-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.dm-recording-stop {
+  background: hsl(207 100% 65% / 0.2);
+  color: hsl(207 100% 75%);
+}
+
+.dm-recording-cancel {
+  color: var(--muted);
+}
+
+.dm-recording-cancel:hover {
+  color: #f87171;
+}
+
+/* Notification opt-in */
+.dm-notify-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  border: 1px solid hsl(207 100% 65% / 0.35);
+  border-radius: 9999px;
+  background: hsl(207 100% 65% / 0.1);
+  padding: 0.4rem 0.85rem;
+  color: hsl(207 100% 75%);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.dm-notify-cta:hover {
+  background: hsl(207 100% 65% / 0.18);
+}
+
+/* Dock / home-screen unread badge */
+.dock-badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  display: grid;
+  place-items: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border: 2px solid var(--os-bg);
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Incoming-message toast */
+.dm-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 6.5rem;
+  z-index: 9400;
+  display: flex;
+  align-items: stretch;
+  max-width: min(360px, calc(100vw - 2rem));
+  overflow: hidden;
+  border: 1px solid var(--os-glass-border);
+  border-radius: 0.75rem;
+  background: hsl(220 20% 14% / 0.95);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--os-shadow-lg);
+}
+
+.dm-toast-body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  text-align: left;
+}
+
+.dm-toast-body:hover {
+  background: hsl(220 15% 22% / 0.6);
+}
+
+.dm-toast-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, hsl(207 100% 65% / 0.3), hsl(270 100% 67% / 0.3));
+  color: hsl(207 100% 78%);
+}
+
+.dm-toast-text {
+  display: grid;
+  min-width: 0;
+}
+
+.dm-toast-text strong {
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.dm-toast-text em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: normal;
+}
+
+.dm-toast-close {
+  flex-shrink: 0;
+  padding: 0 0.7rem;
+  color: var(--muted);
+  border-left: 1px solid var(--surface-border);
+}
+
+.dm-toast-close:hover {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .dm-toast {
+    right: 0.75rem;
+    left: 0.75rem;
+    bottom: 5.5rem;
+    max-width: none;
+  }
+}
+
 /* ============================================================
    Auth screen
    ============================================================ */

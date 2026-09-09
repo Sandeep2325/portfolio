@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       .select("*")
       .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
       .order("created_at", { ascending: true })
-      .limit(200);
+      .limit(500);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -46,11 +46,16 @@ export async function GET(request: Request) {
     let contacts: { id: string; email: string }[] = [];
 
     if (admin) {
-      const peerIds = Array.from(
-        new Set(messages.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== user.id)),
-      );
+      const { data: guests } = await supabase.from("profiles").select("id").eq("is_super_admin", false);
+      const guestIds = (guests || []).map((guest) => guest.id);
+      const peerIdsFromMessages = messages
+        .flatMap((message) => [message.sender_id, message.recipient_id])
+        .filter((id) => id !== user.id);
+      const peerIds = Array.from(new Set([...guestIds, ...peerIdsFromMessages]));
       const emails = await resolveContactEmails(peerIds);
-      contacts = peerIds.map((id) => ({ id, email: emails[id] || `${id.slice(0, 8)}…` }));
+      contacts = peerIds
+        .map((id) => ({ id, email: emails[id] || `${id.slice(0, 8)}…` }))
+        .sort((left, right) => left.email.localeCompare(right.email));
     }
 
     return NextResponse.json({ messages, admin, userId: user.id, contacts });
@@ -76,9 +81,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Admin account is not configured. Mark one profile as super admin first." }, { status: 503 });
     }
 
-    const target = (await isSuperAdmin(user.id)) ? recipientId : adminId;
+    const admin = await isSuperAdmin(user.id);
+    const target = admin ? recipientId : adminId;
     if (!target || !/^[0-9a-f-]{36}$/i.test(target)) {
       return NextResponse.json({ error: "Choose a recipient." }, { status: 400 });
+    }
+    if (target === user.id) {
+      return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
+    }
+
+    if (admin) {
+      const { data: profile } = await createServerSupabaseClient()
+        .from("profiles")
+        .select("id, is_super_admin")
+        .eq("id", target)
+        .maybeSingle();
+      if (!profile || profile.is_super_admin) {
+        return NextResponse.json({ error: "Choose a guest account to message." }, { status: 400 });
+      }
     }
 
     const { data, error } = await createServerSupabaseClient()

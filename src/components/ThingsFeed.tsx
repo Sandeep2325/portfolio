@@ -187,7 +187,7 @@ export default function ThingsFeed() {
             <textarea required name="body" maxLength={2000} rows={5} placeholder="Write an update..." disabled={publishing} />
           </label>
           <label>
-            Image <span>(optional, max 8 MB)</span>
+            Photo <span>(optional — upload or take a photo, max 20 MB)</span>
             <input name="image" type="file" accept="image/*" disabled={publishing} />
           </label>
           <div className="composer-footer">

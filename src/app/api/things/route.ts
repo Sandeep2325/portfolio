@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient, getAssetBucketName, getPublicAssetUrl, isSupabaseConfigured } from "@/lib/supabase";
 import { getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
 
-const MAX_IMAGE_SIZE = 8 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
 function error(message: string, status = 400) { return NextResponse.json({ error: message }, { status }); }
 
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const supabase = createServerSupabaseClient();
     let imagePath: string | null = null;
     if (image instanceof File && image.size > 0) {
-      if (!image.type.startsWith("image/") || image.size > MAX_IMAGE_SIZE) return error("Upload a supported image smaller than 8 MB.");
+      if (!image.type.startsWith("image/") || image.size > MAX_IMAGE_SIZE) return error("Upload a supported image smaller than 20 MB.");
       const extension = image.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "jpg";
       imagePath = `things/${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage.from(getAssetBucketName()).upload(imagePath, image, { contentType: image.type, upsert: false });

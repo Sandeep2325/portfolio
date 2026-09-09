@@ -144,8 +144,13 @@ export default function Window({
   return (
     <div
       className={cn(
-        "os-window animate-window-open fixed flex flex-col overflow-hidden rounded-xl border border-white/15 bg-[#1a1a2e] shadow-2xl",
-        state.isMinimized && "pointer-events-none scale-90 opacity-0",
+        "os-window fixed flex flex-col overflow-hidden rounded-xl border border-white/15 bg-[#1a1a2e] shadow-2xl",
+        // The open animation fills forwards, so its final opacity/transform would
+        // beat the minimized utilities. Drop the animation while minimized, and
+        // let re-adding it play the restore spring.
+        state.isMinimized
+          ? "pointer-events-none scale-90 opacity-0 transition-all duration-200 ease-out"
+          : "animate-window-open",
         dragging && "cursor-grabbing select-none",
       )}
       style={{ ...geometry, zIndex: state.zIndex }}
@@ -163,13 +168,13 @@ export default function Window({
 
       <div
         className={cn(
-          "flex select-none items-center gap-3 border-b border-white/10 bg-[#252540] px-4 py-2.5",
+          "relative flex select-none items-center border-b border-white/10 bg-[#252540] px-4 py-2.5",
           !state.isMaximized && "cursor-grab active:cursor-grabbing",
         )}
         onMouseDown={startDrag}
         onDoubleClick={onMaximize}
       >
-        <div className="window-controls flex gap-2">
+        <div className="window-controls relative z-10 flex gap-2">
           <button type="button" aria-label="Close window" className="window-control close" onClick={onClose} />
           <button type="button" aria-label="Minimize window" className="window-control minimize" onClick={onMinimize} />
           <button
@@ -180,7 +185,9 @@ export default function Window({
           />
         </div>
 
-        <div className="-ml-16 flex flex-1 items-center justify-center gap-2">
+        {/* Centred over the whole header and click-through, so it can never
+            cover the traffic-light controls. */}
+        <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2">
           {config?.icon && <config.icon className="text-base text-white/70" />}
           <span className="text-sm font-medium text-white/70">{config?.name}</span>
         </div>

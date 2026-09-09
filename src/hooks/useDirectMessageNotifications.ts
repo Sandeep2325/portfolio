@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserSupabase } from "@/lib/supabase-browser";
+import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
 
 export type UnreadItem = {
   id: number;
@@ -100,18 +101,28 @@ export function useDirectMessageNotifications() {
     void supabase.auth.getSession().then(async ({ data }) => {
       const token = data.session?.access_token;
       if (!token) return;
-      await supabase.realtime.setAuth(token);
+      await primeRealtimeAuth(supabase);
       channel = supabase
-        .channel("dm-inbox-watch")
+        .channel(`dm-inbox-watch-${Date.now()}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, scheduleLoad)
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, scheduleLoad)
-        .subscribe();
+        .subscribe((status) => {
+          // A dropped socket would otherwise leave the badge frozen.
+          if (status === "SUBSCRIBED" || isDeadChannelStatus(status)) scheduleLoad();
+        });
     });
+
+    // Backstop for a socket that never recovers.
+    const onFocus = () => scheduleLoad();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
 
     const { data: auth } = supabase.auth.onAuthStateChange(() => void load());
 
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
       auth.subscription.unsubscribe();
       if (channel) void supabase.removeChannel(channel);
     };

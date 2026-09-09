@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { browserSupabase } from "@/lib/supabase-browser";
+import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
 
 /** Stop showing "typing…" if the peer goes quiet without sending a stop event. */
 const TYPING_TIMEOUT_MS = 3500;
@@ -37,7 +38,7 @@ export function useConversationChannel(userId: string, peerId: string, token: st
     let cancelled = false;
 
     void (async () => {
-      await supabase.realtime.setAuth(token);
+      await primeRealtimeAuth(supabase);
       if (cancelled) return;
 
       channel = supabase.channel(name, {
@@ -64,7 +65,13 @@ export function useConversationChannel(userId: string, peerId: string, token: st
           }
         })
         .subscribe((status) => {
+          if (cancelled) return;
           if (status === "SUBSCRIBED") void channel?.track({ userId, at: Date.now() });
+          // Presence and typing go silent on a dead channel; drop the stale state.
+          else if (isDeadChannelStatus(status)) {
+            setPeerOnline(false);
+            setPeerTyping(false);
+          }
         });
 
       channelRef.current = channel;

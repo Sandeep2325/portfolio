@@ -1113,6 +1113,45 @@ body {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* Optimistic send states */
+.dm.dm-sending {
+  opacity: 0.72;
+}
+
+.dm.dm-failed {
+  border-color: hsl(0 84% 60% / 0.5);
+  background: hsl(0 84% 60% / 0.12);
+}
+
+.dm-retry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+}
+
+.dm-retry > span {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.dm-retry button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.2rem 0.5rem;
+  background: hsl(220 15% 24% / 0.8);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.dm-retry button:hover {
+  background: hsl(220 15% 32% / 0.9);
+}
+
 /* Attachments in the thread */
 .dm-audio {
   display: flex;

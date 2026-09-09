@@ -9,19 +9,32 @@ export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
 
+  // `since` asks for just what changed, so the client can re-sync cheaply after
+  // a dropped socket without refetching the whole thread.
+  const since = new URL(request.url).searchParams.get("since");
+
   try {
     const supabase = createServerSupabaseClient();
     const admin = await isSuperAdmin(user.id);
-    const { data, error } = await supabase
+
+    let query = supabase
       .from("direct_messages")
       .select("*")
-      .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
-      .order("created_at", { ascending: true })
-      .limit(500);
+      .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
+
+    // Catch new messages and freshly-stamped read receipts alike.
+    if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since}`);
+
+    const { data, error } = await query.order("created_at", { ascending: true }).limit(500);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const rows = (data || []) as DirectMessageRow[];
+
+    if (since) {
+      return NextResponse.json({ messages: await signAttachments(rows), admin, userId: user.id, syncedAt: new Date().toISOString() });
+    }
+
     let contacts: Contact[] = [];
     let owner: { id: string; label: string; lastSeenAt: string | null } | null = null;
 
@@ -55,6 +68,7 @@ export async function GET(request: Request) {
       userId: user.id,
       contacts,
       owner,
+      syncedAt: new Date().toISOString(),
     });
   } catch (caught) {
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
@@ -92,12 +106,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const adminId = await getAdminUserId();
+    // These two are independent; serialising them added a round trip to every send.
+    const [adminId, admin] = await Promise.all([getAdminUserId(), isSuperAdmin(user.id)]);
     if (!adminId) {
       return NextResponse.json({ error: "Admin account is not configured. Mark one profile as super admin first." }, { status: 503 });
     }
 
-    const admin = await isSuperAdmin(user.id);
     const target = admin ? recipientId : adminId;
     if (!target || !/^[0-9a-f-]{36}$/i.test(target)) {
       return NextResponse.json({ error: "Choose a recipient." }, { status: 400 });

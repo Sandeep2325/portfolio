@@ -186,10 +186,17 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     return () => setActiveConversation(null);
   }, [peerId, isVisible]);
 
-  const authHeaders = useCallback(
-    (extra: Record<string, string> = {}) => (token ? { ...extra, Authorization: `Bearer ${token}` } : extra),
-    [token],
-  );
+  /**
+   * Reads the current access token straight from Supabase rather than from
+   * React state, so a token refreshed since mount is picked up immediately.
+   */
+  const currentToken = useCallback(async () => {
+    if (!browserSupabase) return "";
+    const { data } = await browserSupabase.auth.getSession();
+    const accessToken = data.session?.access_token || "";
+    setToken((previous) => (previous === accessToken ? previous : accessToken));
+    return accessToken;
+  }, []);
 
   /** Fetches fresh signed URLs for the given messages. */
   const signAttachments = useCallback(async (ids: number[], accessToken: string) => {
@@ -215,9 +222,10 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
   /** Pulls anything created or read since the last successful sync. */
   const catchUp = useCallback(
-    async (accessToken: string) => {
+    async () => {
       if (!syncedAtRef.current) return;
       try {
+        const accessToken = await currentToken();
         const response = await fetch(`/api/messages?since=${encodeURIComponent(syncedAtRef.current)}`, {
           headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
           cache: "no-store",
@@ -231,39 +239,68 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         // Next tick tries again.
       }
     },
-    [],
+    [currentToken],
   );
 
-  // Initial load.
-  useEffect(() => {
+  /** Loads the thread and the viewer's role. Safe to re-run at any time. */
+  const loadThread = useCallback(async () => {
     if (!browserSupabase) return;
-    const supabase = browserSupabase;
 
-    void (async () => {
-      const { data } = await supabase.auth.getSession();
-      const accessToken = data.session?.access_token || "";
-      setToken(accessToken);
-
-      const response = await fetch("/api/messages", {
+    const fetchOnce = async (accessToken: string) =>
+      fetch("/api/messages", {
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        cache: "no-store",
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        setError(payload.error || "Could not load messages.");
-        return;
-      }
 
-      setMessages((payload.messages as Message[]).map(hydrate));
-      setAdmin(payload.admin);
-      setUserId(payload.userId);
-      setContacts(payload.contacts || []);
-      setOwner(payload.owner || null);
-      setAnonymous(Boolean(payload.anonymous));
-      setVisitorLabel(payload.visitorLabel || "");
-      syncedAtRef.current = payload.syncedAt || new Date().toISOString();
-      if (payload.owner) setPeerLastSeen(payload.owner.lastSeenAt);
-    })();
-  }, []);
+    let accessToken = await currentToken();
+    let response = await fetchOnce(accessToken);
+    let payload = await response.json();
+
+    // The session can still be settling on a cold load. If the server says we
+    // are anonymous while a session actually exists, refresh once and retry
+    // rather than leaving the panel stuck on the signed-out view.
+    if (response.ok && payload.anonymous) {
+      const { data: refreshed } = await browserSupabase.auth.refreshSession();
+      const retryToken = refreshed.session?.access_token || (await currentToken());
+      if (retryToken && retryToken !== accessToken) {
+        accessToken = retryToken;
+        setToken(retryToken);
+        response = await fetchOnce(retryToken);
+        payload = await response.json();
+      }
+    }
+
+    if (!response.ok) {
+      setError(payload.error || "Could not load messages.");
+      return;
+    }
+
+    setError("");
+    setMessages((payload.messages as Message[]).map(hydrate));
+    setAdmin(payload.admin);
+    setUserId(payload.userId);
+    setContacts(payload.contacts || []);
+    setOwner(payload.owner || null);
+    setAnonymous(Boolean(payload.anonymous));
+    setVisitorLabel(payload.visitorLabel || "");
+    syncedAtRef.current = payload.syncedAt || new Date().toISOString();
+    if (payload.owner) setPeerLastSeen(payload.owner.lastSeenAt);
+  }, [currentToken]);
+
+  useEffect(() => {
+    void loadThread();
+    if (!browserSupabase) return;
+
+    // Signing in, signing out, or a token refresh all change who this panel is
+    // for. Without this the thread keeps whatever state it had at mount, which
+    // is how a signed-in visitor could end up staring at the sign-in chip.
+    const { data } = browserSupabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        void loadThread();
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, [loadThread]);
 
   // Realtime, with re-auth on token refresh and a rejoin if the channel dies.
   useEffect(() => {
@@ -323,7 +360,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         .subscribe((status) => {
           if (cancelled) return;
           // Whatever happened while we were disconnected, pull it now.
-          if (status === "SUBSCRIBED") void catchUp(token);
+          if (status === "SUBSCRIBED") void catchUp();
           else if (isDeadChannelStatus(status)) {
             if (rejoinTimer) clearTimeout(rejoinTimer);
             rejoinTimer = setTimeout(() => {
@@ -348,7 +385,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   useEffect(() => {
     if (!token && !anonymous) return;
     const run = () => {
-      if (document.visibilityState === "visible") void catchUp(token);
+      if (document.visibilityState === "visible") void catchUp();
     };
     const timer = setInterval(run, anonymous ? ANON_CATCH_UP_INTERVAL_MS : CATCH_UP_INTERVAL_MS);
     window.addEventListener("focus", run);
@@ -383,7 +420,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     const poll = async () => {
       try {
         const response = await fetch(`/api/presence?userId=${peerId}`, {
-          headers: authHeaders(),
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
           cache: "no-store",
         });
         if (!response.ok || cancelled) return;
@@ -400,7 +437,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       cancelled = true;
       clearInterval(timer);
     };
-  }, [token, peerId, authHeaders]);
+  }, [token, peerId]);
 
   const visibleMessages = useMemo(() => {
     if (!admin) return messages;
@@ -420,9 +457,12 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     if (unread.length === 0) return;
 
     try {
+      const accessToken = await currentToken();
       const response = await fetch("/api/messages/read", {
         method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
+        headers: accessToken
+          ? { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }
+          : { "Content-Type": "application/json" },
         body: JSON.stringify({ peerId }),
       });
       if (!response.ok) return;
@@ -432,7 +472,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     } catch {
       // Retried the next time this effect runs.
     }
-  }, [token, anonymous, peerId, visibleMessages, isVisible, authHeaders, isIncoming]);
+  }, [token, anonymous, peerId, visibleMessages, isVisible, isIncoming, currentToken]);
 
   useEffect(() => {
     void markRead();
@@ -505,9 +545,10 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         }
         if (payloadData.replyToId) payload.set("replyToId", String(payloadData.replyToId));
 
+        const accessToken = await currentToken();
         const response = await fetch("/api/messages", {
           method: "POST",
-          headers: authHeaders(),
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
           body: payload,
         });
         const data = await response.json();
@@ -543,7 +584,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         );
       }
     },
-    [authHeaders],
+    [currentToken],
   );
 
   function send(event: FormEvent<HTMLFormElement>) {
@@ -614,9 +655,12 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     setDeletingId(messageId);
     setError("");
     try {
+      const accessToken = await currentToken();
       const response = await fetch("/api/messages", {
         method: "DELETE",
-        headers: authHeaders({ "Content-Type": "application/json" }),
+        headers: accessToken
+          ? { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }
+          : { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId, scope }),
       });
       const data = await response.json();

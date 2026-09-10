@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const supabase = createServerSupabaseClient();
     const { data, error } = await supabase
       .from("direct_messages")
-      .select("id, sender_id, body, attachment_kind, created_at")
+      .select("id, sender_id, anon_visitor_id, body, attachment_kind, created_at")
       .eq("recipient_id", user.id)
       .is("read_at", null)
       .order("created_at", { ascending: true })
@@ -39,7 +39,19 @@ export async function GET(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const rows = data || [];
-    const senderIds = Array.from(new Set(rows.map((row) => row.sender_id as string)));
+    const senderIds = Array.from(
+      new Set(rows.map((row) => row.sender_id as string | null).filter((id): id is string => Boolean(id))),
+    );
+
+    // Anonymous senders have no sender_id; their identity is the visitor row.
+    const anonIds = Array.from(
+      new Set(rows.map((row) => row.anon_visitor_id as string | null).filter((id): id is string => Boolean(id))),
+    );
+    const anonLabels = new Map<string, string>();
+    if (anonIds.length > 0) {
+      const { data: visitors } = await supabase.from("anon_visitors").select("id, label").in("id", anonIds);
+      for (const visitor of visitors || []) anonLabels.set(visitor.id as string, visitor.label as string);
+    }
 
     // The owner has a fixed public name; everyone else resolves to username/email.
     const { data: ownerProfile } = await supabase
@@ -57,8 +69,13 @@ export async function GET(request: Request) {
       ids: rows.map((row) => row.id as number),
       items: rows.map((row) => ({
         id: row.id as number,
-        senderId: row.sender_id as string,
-        senderLabel: row.sender_id === ownerId ? OWNER_DISPLAY_NAME : labels.get(row.sender_id as string) || "Someone",
+        // For an anonymous thread the visitor id is the conversation key.
+        senderId: (row.anon_visitor_id as string | null) || (row.sender_id as string),
+        senderLabel: row.anon_visitor_id
+          ? anonLabels.get(row.anon_visitor_id as string) || "Anonymous guest"
+          : row.sender_id === ownerId
+            ? OWNER_DISPLAY_NAME
+            : labels.get(row.sender_id as string) || "Someone",
         preview: preview(row.body as string, (row.attachment_kind as AttachmentKind | null) || null),
         createdAt: row.created_at as string,
       })),

@@ -37,8 +37,12 @@ const REJOIN_DELAY_MS = 1500;
 
 type Message = {
   id: number;
-  sender_id: string;
-  recipient_id: string;
+  /** Null on a message sent by an anonymous visitor. */
+  sender_id: string | null;
+  /** Null on a message the owner sent to an anonymous visitor. */
+  recipient_id: string | null;
+  /** Set on both sides of an anonymous thread; this is its identity. */
+  anon_visitor_id?: string | null;
   body: string;
   attachment_path?: string | null;
   attachment_kind?: AttachmentKind | null;
@@ -111,6 +115,22 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const peerLabel = admin ? selectedContact?.label || "guest" : owner?.label || "Sandeep Gowda";
 
   const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
+
+  /**
+   * Which side of the thread a message sits on. Anonymous threads cannot use
+   * sender_id, because it is null for whichever side the visitor sent.
+   */
+  const isIncoming = useCallback(
+    (message: Message) => {
+      if (message.anon_visitor_id) {
+        // Viewer is the anonymous visitor: the owner's replies come in.
+        // Viewer is the owner: the visitor's messages (no sender) come in.
+        return anonymous ? message.sender_id !== null : message.sender_id === null;
+      }
+      return message.sender_id !== userId;
+    },
+    [anonymous, userId],
+  );
 
   // Suppress banners only while this thread is genuinely on screen. A minimized
   // window keeps this component mounted, and claiming focus from there would
@@ -324,12 +344,18 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const visibleMessages = useMemo(() => {
     if (!admin) return messages;
     if (!recipientId) return [];
-    return messages.filter((message) => message.sender_id === recipientId || message.recipient_id === recipientId);
+    return messages.filter((message) =>
+      message.anon_visitor_id
+        ? message.anon_visitor_id === recipientId
+        : message.sender_id === recipientId || message.recipient_id === recipientId,
+    );
   }, [admin, messages, recipientId]);
 
   const markRead = useCallback(async () => {
     if ((!token && !anonymous) || !peerId || !isVisible || document.visibilityState !== "visible") return;
-    const unread = visibleMessages.filter((message) => message.sender_id === peerId && !message.read_at);
+    const unread = visibleMessages.filter(
+      (message) => !message.read_at && (message.anon_visitor_id ? isIncoming(message) : message.sender_id === peerId),
+    );
     if (unread.length === 0) return;
 
     try {
@@ -345,7 +371,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     } catch {
       // Retried the next time this effect runs.
     }
-  }, [token, anonymous, peerId, visibleMessages, isVisible, authHeaders]);
+  }, [token, anonymous, peerId, visibleMessages, isVisible, authHeaders, isIncoming]);
 
   useEffect(() => {
     void markRead();
@@ -579,7 +605,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
           </p>
         ) : (
           visibleMessages.map((message) => {
-            const outgoing = message.sender_id === userId;
+            const outgoing = !isIncoming(message);
             return (
               <div
                 className={`${outgoing ? "dm outgoing" : "dm incoming"}${message.status === "sending" ? " dm-sending" : ""}${

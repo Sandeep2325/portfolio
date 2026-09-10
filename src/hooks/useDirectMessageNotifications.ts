@@ -100,14 +100,28 @@ export function useDirectMessageNotifications() {
   }, []);
 
   const announce = useCallback(
-    async (row: { id: number; sender_id: string; body: string; attachment_kind?: AttachmentKind | null; created_at: string }, token: string) => {
+    async (
+      row: {
+        id: number;
+        sender_id: string | null;
+        anon_visitor_id?: string | null;
+        body: string;
+        attachment_kind?: AttachmentKind | null;
+        created_at: string;
+      },
+      token: string,
+    ) => {
+      // An anonymous thread is identified by its visitor, not by a sender id.
+      const peerKey = row.anon_visitor_id || row.sender_id;
+      if (!peerKey) return;
+
       // Already reading this thread? Nothing to announce.
-      if (isConversationOnScreen(row.sender_id)) return;
+      if (isConversationOnScreen(peerKey)) return;
 
       const item: UnreadItem = {
         id: row.id,
-        senderId: row.sender_id,
-        senderLabel: await labelFor(row.sender_id, token),
+        senderId: peerKey,
+        senderLabel: await labelFor(peerKey, token),
         preview: preview(row.body, row.attachment_kind || null),
         createdAt: row.created_at,
       };
@@ -160,8 +174,9 @@ export function useDirectMessageNotifications() {
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, (event) => {
           const row = event.new as {
             id: number;
-            sender_id: string;
-            recipient_id: string;
+            sender_id: string | null;
+            recipient_id: string | null;
+            anon_visitor_id?: string | null;
             body: string;
             attachment_kind?: AttachmentKind | null;
             created_at: string;

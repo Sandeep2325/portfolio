@@ -22,6 +22,17 @@ export async function GET(request: Request) {
   try {
     const supabase = createServerSupabaseClient();
 
+    // The id may be an anonymous visitor rather than an account.
+    const { data: visitor } = await supabase.from("anon_visitors").select("id, label").eq("id", id).maybeSingle();
+    if (visitor) {
+      const { count: anonCount } = await supabase
+        .from("direct_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("anon_visitor_id", id);
+      if (!anonCount) return NextResponse.json({ error: "No conversation with that visitor." }, { status: 404 });
+      return NextResponse.json({ label: visitor.label as string });
+    }
+
     const { count } = await supabase
       .from("direct_messages")
       .select("id", { count: "exact", head: true })

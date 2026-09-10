@@ -10,6 +10,8 @@ import {
   HiOutlineArrowPath,
   HiOutlineEllipsisHorizontal,
   HiOutlineTrash,
+  HiOutlineArrowUturnLeft,
+  HiOutlineXMark,
 } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
@@ -55,15 +57,40 @@ type Message = {
   attachment?: MessageAttachmentData | null;
   read_at?: string | null;
   deleted_for_everyone_at?: string | null;
+  reply_to_id?: number | null;
+  reply_to?: ReplyPreview | null;
   created_at: string;
   /** Set only on locally-created bubbles that have not been confirmed yet. */
   status?: "sending" | "failed";
 };
 
+type ReplyPreview = { id: number; excerpt: string; outgoing: boolean; deleted: boolean };
+
 type Contact = { id: string; kind: "user" | "anon"; email: string; username: string | null; label: string; lastSeenAt: string | null; ip?: string | null };
 type Owner = { id: string; label: string; lastSeenAt: string | null };
 type Pending = { file: File; kind: AttachmentKind; previewUrl: string | null; durationMs: number | null };
-type RetryPayload = { text: string; file: File | null; durationMs: number | null };
+type RetryPayload = { text: string; file: File | null; durationMs: number | null; replyToId: number | null };
+
+const KIND_EXCERPT: Record<string, string> = {
+  image: "📷 Photo",
+  audio: "🎤 Voice message",
+  file: "📎 Attachment",
+};
+
+/** Builds a quote preview from a message we already hold locally. */
+function previewOf(original: Message, viewerSent: boolean): ReplyPreview {
+  const text = (original.body || "").trim();
+  const excerpt = original.deleted_for_everyone_at
+    ? "This message was deleted"
+    : text
+      ? text.length > 90
+        ? `${text.slice(0, 90)}…`
+        : text
+      : original.attachment_kind
+        ? KIND_EXCERPT[original.attachment_kind]
+        : "Message";
+  return { id: original.id, excerpt, outgoing: viewerSent, deleted: Boolean(original.deleted_for_everyone_at) };
+}
 
 /** Realtime rows arrive as raw columns; rebuild the attachment shape the UI uses. */
 function hydrate(row: Message): Message {
@@ -102,6 +129,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [menuFor, setMenuFor] = useState<number | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [anonymous, setAnonymous] = useState(false);
   const [visitorLabel, setVisitorLabel] = useState("");
@@ -255,6 +284,11 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, (event) => {
           const incoming = hydrate(event.new as Message);
           setMessages((current) => {
+            // Realtime carries reply_to_id but no preview; build it locally.
+            if (incoming.reply_to_id && !incoming.reply_to) {
+              const original = current.find((item) => item.id === incoming.reply_to_id);
+              if (original) incoming.reply_to = previewOf(original, !isIncoming(original));
+            }
             if (current.some((item) => item.id === incoming.id)) return current;
             // Our own send may already be on screen as an optimistic bubble.
             const optimistic = current.find(
@@ -308,7 +342,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       if (rejoinTimer) clearTimeout(rejoinTimer);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [userId, token, anonymous, signAttachments, catchUp]);
+  }, [userId, token, anonymous, signAttachments, catchUp, isIncoming]);
 
   // Backstop: re-sync when the tab comes back and on a slow timer.
   useEffect(() => {
@@ -469,6 +503,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
           payload.set("attachment", payloadData.file);
           if (payloadData.durationMs) payload.set("durationMs", String(payloadData.durationMs));
         }
+        if (payloadData.replyToId) payload.set("replyToId", String(payloadData.replyToId));
 
         const response = await fetch("/api/messages", {
           method: "POST",
@@ -488,12 +523,17 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         const saved = hydrate(data.message as Message);
         retryPayloads.current.delete(optimisticId);
         setMessages((current) => {
-          // Realtime may have delivered the same row while this was in flight.
-          const withoutDuplicate = current.filter((item) => item.id !== saved.id);
-          return merge(
-            withoutDuplicate.map((item) => (item.id === optimisticId ? saved : item)),
-            [],
-          );
+          /*
+           * Realtime may have delivered this row before the POST returned, in
+           * which case it already replaced the optimistic bubble. Dropping the
+           * optimistic id and then upserting is safe either way; the previous
+           * version removed the real row and then had no optimistic left to
+           * swap, losing the message from the sender's own thread.
+           */
+          const withoutOptimistic = current.filter((item) => item.id !== optimisticId);
+          return withoutOptimistic.some((item) => item.id === saved.id)
+            ? withoutOptimistic
+            : merge(withoutOptimistic, [saved]);
         });
         if (saved.created_at > syncedAtRef.current) syncedAtRef.current = saved.created_at;
       } catch {
@@ -534,6 +574,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       created_at: new Date().toISOString(),
       read_at: null,
       status: "sending",
+      reply_to_id: replyTo?.id || null,
+      reply_to: replyTo,
       attachment: pending
         ? {
             url: pending.previewUrl,
@@ -548,10 +590,16 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
     setMessages((current) => [...current, optimistic]);
 
-    const payloadData: RetryPayload = { text, file: pending?.file || null, durationMs: pending?.durationMs || null };
+    const payloadData: RetryPayload = {
+      text,
+      file: pending?.file || null,
+      durationMs: pending?.durationMs || null,
+      replyToId: replyTo?.id || null,
+    };
     formElement.reset();
     // Keep the object URL alive for the optimistic bubble's preview.
     setPending(null);
+    setReplyTo(null);
     recorder.discard();
     textareaRef.current?.focus();
 
@@ -594,6 +642,14 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     } finally {
       setDeletingId(null);
     }
+  }
+
+  function jumpTo(messageId: number) {
+    const node = document.getElementById(`dm-${messageId}`);
+    if (!node) return;
+    node.scrollIntoView({ block: "center", behavior: "smooth" });
+    setHighlightId(messageId);
+    setTimeout(() => setHighlightId((current) => (current === messageId ? null : current)), 1600);
   }
 
   function retry(optimisticId: number) {
@@ -681,8 +737,9 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
               <div
                 className={`${outgoing ? "dm outgoing" : "dm incoming"}${message.status === "sending" ? " dm-sending" : ""}${
                   message.status === "failed" ? " dm-failed" : ""
-                }${removed ? " dm-removed" : ""}`}
+                }${removed ? " dm-removed" : ""}${highlightId === message.id ? " dm-highlight" : ""}`}
                 key={message.id}
+                id={`dm-${message.id}`}
               >
                 {canDelete && (
                   <div className="dm-menu">
@@ -701,6 +758,19 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
                     {menuFor === message.id && (
                       <div className="dm-menu-list" onClick={(event) => event.stopPropagation()}>
+                        {!removed && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyTo(previewOf(message, outgoing));
+                              setMenuFor(null);
+                              textareaRef.current?.focus();
+                            }}
+                          >
+                            <HiOutlineArrowUturnLeft className="h-3.5 w-3.5" />
+                            Reply
+                          </button>
+                        )}
                         <button type="button" onClick={() => void remove(message.id, "me")}>
                           <HiOutlineTrash className="h-3.5 w-3.5" />
                           Delete for me
@@ -714,6 +784,15 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
                       </div>
                     )}
                   </div>
+                )}
+
+                {message.reply_to && !removed && (
+                  <button type="button" className="dm-quote" onClick={() => jumpTo(message.reply_to!.id)}>
+                    <span className="dm-quote-who">{message.reply_to.outgoing ? "You" : peerLabel}</span>
+                    <span className={message.reply_to.deleted ? "dm-quote-text deleted" : "dm-quote-text"}>
+                      {message.reply_to.excerpt}
+                    </span>
+                  </button>
                 )}
 
                 {removed ? (
@@ -786,6 +865,19 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
             }
           }}
         />
+
+        {replyTo && (
+          <div className="dm-reply-bar">
+            <HiOutlineArrowUturnLeft className="h-4 w-4 flex-shrink-0 text-[#4da8ff]" />
+            <span className="dm-reply-bar-text">
+              <strong>Replying to {replyTo.outgoing ? "yourself" : peerLabel}</strong>
+              <em>{replyTo.excerpt}</em>
+            </span>
+            <button type="button" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
+              <HiOutlineXMark className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {recording && (
           <div className="dm-recording" role="status">

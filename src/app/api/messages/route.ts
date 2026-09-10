@@ -4,6 +4,7 @@ import { createServerSupabaseClient, isSupabaseConfigured } from "@/lib/supabase
 import { DM_ATTACHMENT_BUCKET, MAX_ATTACHMENT_SIZE, extensionOf, resolveKind, type AttachmentKind } from "@/lib/attachments";
 import {
   applyDeletions,
+  attachReplyPreviews,
   resolveAnonContacts,
   resolveContacts,
   signAttachments,
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
 
       const viewer: Viewer = { userId: null, anonVisitorId: visitor.id };
       const response = NextResponse.json({
-        messages: await signAttachments(applyDeletions((data || []) as DirectMessageRow[], viewer)),
+        messages: await signAttachments(await attachReplyPreviews(applyDeletions((data || []) as DirectMessageRow[], viewer), viewer)),
         anonymous: true,
         admin: false,
         userId: visitor.id,
@@ -95,7 +96,7 @@ export async function GET(request: Request) {
 
     if (since) {
       return NextResponse.json({
-        messages: await signAttachments(rows),
+        messages: await signAttachments(await attachReplyPreviews(rows, viewer)),
         admin,
         userId: user.id,
         syncedAt: new Date().toISOString(),
@@ -120,7 +121,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      messages: await signAttachments(rows),
+      messages: await signAttachments(await attachReplyPreviews(rows, viewer)),
       admin,
       userId: user.id,
       contacts,
@@ -139,6 +140,8 @@ export async function POST(request: Request) {
   const message = String(form.get("body") || "").trim();
   const recipientId = String(form.get("recipientId") || "");
   const durationMs = Number(form.get("durationMs") || 0);
+  const replyToRaw = form.get("replyToId");
+  const replyToId = replyToRaw === null || replyToRaw === "" ? null : Number(replyToRaw);
   const upload = form.get("attachment") ?? form.get("image");
   const file = upload instanceof File && upload.size > 0 ? upload : null;
 
@@ -147,6 +150,9 @@ export async function POST(request: Request) {
   }
   if (message.length > 2000) {
     return NextResponse.json({ error: "Enter a message of up to 2,000 characters." }, { status: 400 });
+  }
+  if (replyToId !== null && !Number.isInteger(replyToId)) {
+    return NextResponse.json({ error: "Invalid reply target." }, { status: 400 });
   }
 
   let kind: AttachmentKind | null = null;
@@ -200,6 +206,28 @@ export async function POST(request: Request) {
       rowIdentity = { sender_id: user.id, recipient_id: adminId, anon_visitor_id: null };
     }
 
+    // A reply may only quote a message from the same conversation.
+    if (replyToId !== null) {
+      const { data: quoted } = await supabase
+        .from("direct_messages")
+        .select("*")
+        .eq("id", replyToId)
+        .maybeSingle();
+
+      const quotedRow = quoted as DirectMessageRow | null;
+      const sameThread =
+        quotedRow &&
+        (rowIdentity.anon_visitor_id
+          ? quotedRow.anon_visitor_id === rowIdentity.anon_visitor_id
+          : !quotedRow.anon_visitor_id &&
+            [quotedRow.sender_id, quotedRow.recipient_id].sort().join() ===
+              [rowIdentity.sender_id, rowIdentity.recipient_id].sort().join());
+
+      if (!sameThread) {
+        return NextResponse.json({ error: "You can only reply to a message in this conversation." }, { status: 400 });
+      }
+    }
+
     let attachment: Partial<DirectMessageRow> = {};
     if (file && kind) {
       const extension = extensionOf(file.name) || (kind === "audio" ? "webm" : "bin");
@@ -225,13 +253,16 @@ export async function POST(request: Request) {
     const { data, error } = await supabase
       .from("direct_messages")
       // An attachment-only message stores a single space to satisfy the body length check.
-      .insert({ ...rowIdentity, body: message || " ", ...attachment })
+      .insert({ ...rowIdentity, body: message || " ", reply_to_id: replyToId, ...attachment })
       .select()
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const [signed] = await signAttachments([data as DirectMessageRow]);
+    const viewer: Viewer = user
+      ? { userId: user.id, anonVisitorId: null }
+      : { userId: null, anonVisitorId: rowIdentity.anon_visitor_id || null };
+    const [signed] = await signAttachments(await attachReplyPreviews([data as DirectMessageRow], viewer));
     const response = NextResponse.json({ message: signed }, { status: 201 });
     if (issuedToken) setVisitorCookie(response, issuedToken);
     return response;

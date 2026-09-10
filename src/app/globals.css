@@ -1487,6 +1487,98 @@ body {
   background: hsl(0 84% 60% / 0.15);
 }
 
+/* Quoted reply, inside a bubble */
+.dm-quote {
+  display: grid;
+  width: 100%;
+  gap: 0.1rem;
+  margin-bottom: 0.35rem;
+  overflow: hidden;
+  border-left: 3px solid hsl(207 100% 65% / 0.7);
+  border-radius: 0.3rem;
+  background: hsl(220 20% 10% / 0.45);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.dm-quote:hover {
+  background: hsl(220 20% 10% / 0.7);
+}
+
+.dm-quote-who {
+  color: hsl(207 100% 74%);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.dm-quote-text {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-quote-text.deleted {
+  font-style: italic;
+}
+
+/* Briefly flashes the original when you jump to it */
+.dm.dm-highlight {
+  animation: quoteFlash 1.6s ease-out;
+}
+
+@keyframes quoteFlash {
+  0%, 40% { box-shadow: 0 0 0 2px hsl(207 100% 65% / 0.7); }
+  100% { box-shadow: 0 0 0 2px hsl(207 100% 65% / 0); }
+}
+
+/* Quote bar above the composer */
+.dm-reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid hsl(207 100% 65% / 0.3);
+  border-left-width: 3px;
+  border-radius: 0.5rem;
+  background: hsl(207 100% 65% / 0.08);
+  padding: 0.4rem 0.55rem;
+}
+
+.dm-reply-bar-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.05rem;
+}
+
+.dm-reply-bar-text strong {
+  color: hsl(207 100% 76%);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.dm-reply-bar-text em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-reply-bar > button {
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 0.2rem;
+  color: var(--muted);
+}
+
+.dm-reply-bar > button:hover {
+  background: hsl(220 15% 30% / 0.6);
+  color: var(--text);
+}
+
 /* Deleted-for-everyone tombstone */
 .dm.dm-removed {
   border-style: dashed;

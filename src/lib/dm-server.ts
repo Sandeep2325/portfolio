@@ -19,7 +19,17 @@ export type DirectMessageRow = {
   deleted_by_sender_at?: string | null;
   deleted_by_recipient_at?: string | null;
   deleted_for_everyone_at?: string | null;
+  reply_to_id?: number | null;
   created_at: string;
+};
+
+/** Compact snapshot of the message a reply is quoting. */
+export type ReplyPreview = {
+  id: number;
+  excerpt: string;
+  /** True when the quoted message was sent by the viewer. */
+  outgoing: boolean;
+  deleted: boolean;
 };
 
 /** Who is looking at a thread: an account, or an anonymous visitor. */
@@ -68,6 +78,50 @@ export function tombstone(row: DirectMessageRow): DirectMessageRow {
     attachment_size: null,
     attachment_duration_ms: null,
   };
+}
+
+const KIND_EXCERPT: Record<string, string> = {
+  image: "📷 Photo",
+  audio: "🎤 Voice message",
+  file: "📎 Attachment",
+};
+
+function excerptOf(row: DirectMessageRow) {
+  if (row.deleted_for_everyone_at) return "This message was deleted";
+  const text = (row.body || "").trim();
+  if (text) return text.length > 90 ? `${text.slice(0, 90)}…` : text;
+  return row.attachment_kind ? KIND_EXCERPT[row.attachment_kind] : "Message";
+}
+
+/**
+ * Resolves the quoted message for every reply. Most originals are already in
+ * the loaded page; only the ones that fall outside it cost an extra query.
+ */
+export async function attachReplyPreviews(rows: DirectMessageRow[], viewer: Viewer) {
+  const wanted = new Set(rows.map((row) => row.reply_to_id).filter((id): id is number => Boolean(id)));
+  if (wanted.size === 0) return rows.map((row) => ({ ...row, reply_to: null as ReplyPreview | null }));
+
+  const known = new Map(rows.map((row) => [row.id, row]));
+  const missing = [...wanted].filter((id) => !known.has(id));
+
+  if (missing.length > 0) {
+    const { data } = await createServerSupabaseClient().from("direct_messages").select("*").in("id", missing);
+    for (const row of (data || []) as DirectMessageRow[]) known.set(row.id, row);
+  }
+
+  return rows.map((row) => {
+    const original = row.reply_to_id ? known.get(row.reply_to_id) : undefined;
+    if (!original) return { ...row, reply_to: null as ReplyPreview | null };
+    return {
+      ...row,
+      reply_to: {
+        id: original.id,
+        excerpt: excerptOf(original),
+        outgoing: viewerIsSender(original, viewer),
+        deleted: Boolean(original.deleted_for_everyone_at),
+      } as ReplyPreview,
+    };
+  });
 }
 
 /** Applies both deletion rules before anything is signed or serialised. */

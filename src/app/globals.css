@@ -974,15 +974,84 @@ body {
   max-height: 28vh;
 }
 
-/* Banner rides at the top of the thread and scrolls with it. */
-.dm-banner {
-  flex-shrink: 0;
+/* Compact header controls, so guidance costs no vertical space. */
+.dm-header-main {
+  min-width: 0;
+  flex: 1;
 }
 
-.dm-banner .dm-notify,
-.dm-banner .dm-notify-cta {
-  margin-top: 0;
-  margin-bottom: 0.35rem;
+.dm-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dm-bell-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.dm-bell {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 9999px;
+  color: hsl(207 100% 72%);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.dm-bell:hover {
+  background: hsl(207 100% 65% / 0.15);
+}
+
+.dm-bell.on {
+  color: #4ade80;
+  border-color: hsl(142 71% 45% / 0.4);
+}
+
+.dm-bell.muted {
+  color: var(--muted);
+}
+
+/* Floats above the thread instead of pushing it down. */
+.dm-bell-hint {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(260px, 70vw);
+  border: 1px solid var(--os-glass-border);
+  border-radius: 0.5rem;
+  background: hsl(220 20% 14% / 0.98);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--os-shadow-md);
+  padding: 0.5rem 0.6rem;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.dm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid hsl(270 100% 67% / 0.4);
+  border-radius: 9999px;
+  background: hsl(270 100% 67% / 0.15);
+  padding: 0.25rem 0.6rem;
+  color: hsl(270 100% 84%);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dm-chip:hover {
+  background: hsl(270 100% 67% / 0.25);
 }
 
 .dm-form-footer {
@@ -1072,6 +1141,8 @@ body {
 
 .messages-panel .dm-header {
   flex-shrink: 0;
+  align-items: flex-start;
+  gap: 0.6rem;
   margin: 0 -1.5rem;
   padding: 0 1.5rem 0.85rem;
   border-bottom: 1px solid var(--surface-border);
@@ -1136,6 +1207,23 @@ body {
     height: 3.6rem;
     min-height: 3.6rem;
     max-height: 22vh;
+  }
+
+  .messages-panel {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .messages-panel .dm-header {
+    padding-bottom: 0.6rem;
+  }
+
+  .messages-panel .dm-header h2 {
+    font-size: 1rem;
+  }
+
+  .dm-presence {
+    font-size: 0.8rem;
   }
 }
 

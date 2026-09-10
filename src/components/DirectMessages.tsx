@@ -525,7 +525,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   return (
     <section className="surface messages-panel px-6 py-6 sm:px-8">
       <div className="section-heading dm-header">
-        <div>
+        <div className="dm-header-main">
           <h2>{admin ? "Admin inbox" : "Message Sandeep"}</h2>
           {blocked ? (
             <p>Select a guest email to view that conversation or start a new one.</p>
@@ -546,6 +546,16 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
             </p>
           )}
         </div>
+
+        <div className="dm-header-actions">
+          {anonymous && (
+            <a href="/login" className="dm-chip" title={`Messaging anonymously${visitorLabel ? ` as ${visitorLabel}` : ""}. Sign in to keep your history.`}>
+              <HiOutlineEyeSlash className="h-3.5 w-3.5" />
+              Sign in
+            </a>
+          )}
+          {!anonymous && <NotificationSetting />}
+        </div>
       </div>
 
       {admin && (
@@ -561,21 +571,6 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       )}
 
       <div className="dm-list">
-        <div className="dm-banner">
-          {anonymous ? (
-            <p className="dm-notify">
-              <HiOutlineEyeSlash className="h-4 w-4 flex-shrink-0" />
-              Anonymous{visitorLabel ? ` · ${visitorLabel}` : ""}. Replies land here on this device.{" "}
-              <a href="/login" className="text-link">
-                Sign in
-              </a>{" "}
-              to keep them.
-            </p>
-          ) : (
-            <NotificationSetting />
-          )}
-        </div>
-
         {blocked ? (
           <p className="dm-empty">Select a guest email to view or start a private conversation.</p>
         ) : visibleMessages.length === 0 ? (

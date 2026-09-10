@@ -123,7 +123,7 @@ export default function MobileAppWindow({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-[#1a1a2e] px-4 py-4 pb-28" onClick={onFocus}>
+        <div className="flex-1 overflow-y-auto bg-[#1a1a2e] px-4 pb-20 pt-3" onClick={onFocus}>
           {children}
         </div>
       </div>

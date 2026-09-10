@@ -900,10 +900,12 @@ body {
 
 .dm-list {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 0.55rem;
-  min-height: 120px;
+  /* Must be 0 so the list yields space to the composer instead of pushing it
+     out of the panel's clipped box on short screens. */
+  min-height: 0;
   margin: 1rem -0.5rem;
   padding: 0 0.5rem;
   overflow-y: auto;
@@ -962,7 +964,25 @@ body {
 
 .dm-form {
   display: grid;
+  flex-shrink: 0;
   gap: 0.5rem;
+}
+
+/* Capped so a tall composer can never push Send out of a short phone screen. */
+.dm-form textarea {
+  min-height: 4.5rem;
+  max-height: 28vh;
+}
+
+/* Banner rides at the top of the thread and scrolls with it. */
+.dm-banner {
+  flex-shrink: 0;
+}
+
+.dm-banner .dm-notify,
+.dm-banner .dm-notify-cta {
+  margin-top: 0;
+  margin-bottom: 0.35rem;
 }
 
 .dm-form-footer {
@@ -1074,6 +1094,62 @@ body {
   flex-shrink: 0;
 }
 
+@media (max-width: 430px) {
+  .messages-panel {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .messages-panel .dm-header {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .dm-form-footer {
+    gap: 0.4rem;
+  }
+
+  .dm-tools {
+    gap: 0.3rem;
+  }
+
+  .dm-attach {
+    gap: 0.3rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.76rem;
+  }
+
+  .dm-form-footer .primary-button {
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+  }
+
+  .dm {
+    max-width: 88%;
+  }
+
+  /* rows=3 renders taller than min-height alone can trim, so set the height
+     outright. It is still drag-resizable. */
+  .dm-form textarea {
+    height: 3.6rem;
+    min-height: 3.6rem;
+    max-height: 22vh;
+  }
+}
+
+/* Below this the three labels no longer fit beside Send: icons only. */
+@media (max-width: 380px) {
+  .dm-attach-label {
+    display: none;
+  }
+
+  .dm-attach {
+    padding: 0.45rem 0.55rem;
+  }
+}
+
 /* Visit log table */
 .visit-table {
   margin-top: 1rem;
@@ -1128,13 +1204,18 @@ body {
 
 /* Notification status row */
 .dm-notify {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
+  /* Not flex: the icon and link must flow inline with the sentence, otherwise
+     each becomes its own column and the text stacks into a narrow ribbon. */
   margin-top: 0.9rem;
   color: var(--muted);
   font-size: 0.82rem;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.dm-notify svg {
+  display: inline-block;
+  vertical-align: -0.15em;
+  margin-right: 0.35rem;
 }
 
 .dm-notify strong {
@@ -1152,6 +1233,7 @@ body {
 /* Presence line under the panel heading */
 .dm-presence {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   margin-top: 0.3rem;

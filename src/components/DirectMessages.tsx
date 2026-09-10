@@ -355,6 +355,9 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   }, [markRead]);
 
   useEffect(() => {
+    // Only chase the newest message once there is one, otherwise an empty
+    // thread scrolls its own banner out of view.
+    if (visibleMessages.length === 0) return;
     listEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [visibleMessages.length, peerTyping]);
 
@@ -545,19 +548,6 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         </div>
       </div>
 
-      {anonymous ? (
-        <p className="dm-notify">
-          <HiOutlineEyeSlash className="h-4 w-4 flex-shrink-0" />
-          You&apos;re messaging anonymously{visitorLabel ? ` as ${visitorLabel}` : ""}. Replies appear here on this device.{" "}
-          <a href="/login" className="text-link">
-            Sign in
-          </a>{" "}
-          to keep your history and get notifications.
-        </p>
-      ) : (
-        <NotificationSetting />
-      )}
-
       {admin && (
         <select value={recipientId} onChange={(event) => setRecipientId(event.target.value)}>
           <option value="">Choose a guest to message</option>
@@ -571,6 +561,21 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       )}
 
       <div className="dm-list">
+        <div className="dm-banner">
+          {anonymous ? (
+            <p className="dm-notify">
+              <HiOutlineEyeSlash className="h-4 w-4 flex-shrink-0" />
+              Anonymous{visitorLabel ? ` · ${visitorLabel}` : ""}. Replies land here on this device.{" "}
+              <a href="/login" className="text-link">
+                Sign in
+              </a>{" "}
+              to keep them.
+            </p>
+          ) : (
+            <NotificationSetting />
+          )}
+        </div>
+
         {blocked ? (
           <p className="dm-empty">Select a guest email to view or start a private conversation.</p>
         ) : visibleMessages.length === 0 ? (
@@ -703,20 +708,20 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
           <div className="dm-tools">
             <label className="dm-attach" aria-disabled={blocked}>
               <HiOutlinePhoto className="h-4 w-4" />
-              Photo
+              <span className="dm-attach-label">Photo</span>
               <input type="file" accept="image/*" onChange={choose} disabled={blocked} />
             </label>
 
             <label className="dm-attach" aria-disabled={blocked}>
               <HiOutlinePaperClip className="h-4 w-4" />
-              File
+              <span className="dm-attach-label">File</span>
               <input ref={fileInputRef} type="file" accept={FILE_INPUT_ACCEPT} onChange={choose} disabled={blocked} />
             </label>
 
             {recorder.supported && !recording && (
               <button type="button" className="dm-attach" onClick={() => void recorder.start()} disabled={blocked}>
                 <HiOutlineMicrophone className="h-4 w-4" />
-                {pending?.kind === "audio" ? "Re-record" : "Voice"}
+                <span className="dm-attach-label">{pending?.kind === "audio" ? "Re-record" : "Voice"}</span>
               </button>
             )}
           </div>

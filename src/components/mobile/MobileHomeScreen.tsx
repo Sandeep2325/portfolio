@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { APP_CONFIGS, type AppId } from "@/lib/os-apps";
+import { visibleApps, type AppId } from "@/lib/os-apps";
 import type { OSData } from "@/lib/os-data";
 import type { UnreadItem } from "@/hooks/useDirectMessageNotifications";
 import { useMobileAppManager } from "@/hooks/useMobileAppManager";
@@ -22,9 +22,11 @@ interface MobileHomeScreenProps {
   unreadCount: number;
   toast: UnreadItem | null;
   onDismissToast: () => void;
+  isAdmin: boolean;
 }
 
-export default function MobileHomeScreen({ data, initialApp, unreadCount, toast, onDismissToast }: MobileHomeScreenProps) {
+export default function MobileHomeScreen({ data, initialApp, unreadCount, toast, onDismissToast, isAdmin }: MobileHomeScreenProps) {
+  const appList = useMemo(() => visibleApps(isAdmin), [isAdmin]);
   const {
     apps,
     openApps,
@@ -96,7 +98,7 @@ export default function MobileHomeScreen({ data, initialApp, unreadCount, toast,
           </div>
 
           <div className="grid grid-cols-4 gap-5">
-            {APP_CONFIGS.map((app) => (
+            {appList.map((app) => (
               <button
                 key={app.id}
                 type="button"
@@ -130,7 +132,7 @@ export default function MobileHomeScreen({ data, initialApp, unreadCount, toast,
         </div>
       </div>
 
-      {APP_CONFIGS.map((app) => (
+      {appList.map((app) => (
         <MobileAppWindow
           key={app.id}
           appId={app.id}

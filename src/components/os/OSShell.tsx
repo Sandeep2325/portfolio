@@ -5,6 +5,7 @@ import type { AppId } from "@/lib/os-apps";
 import type { OSData } from "@/lib/os-data";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
+import { useVisitLogger } from "@/hooks/useVisitLogger";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
 import { useDirectMessageNotifications } from "@/hooks/useDirectMessageNotifications";
 import BootScreen from "./BootScreen";
@@ -44,6 +45,7 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
   const { unreadCount, toast, dismissToast } = useDirectMessageNotifications();
 
   usePresenceHeartbeat();
+  useVisitLogger();
 
   // Boot once per browser session; later visits go straight to the desktop.
   useEffect(() => {
@@ -83,6 +85,7 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
           unreadCount={unreadCount}
           toast={toast}
           onDismissToast={dismissToast}
+          isAdmin={Boolean(profile?.isAdmin)}
         />
       ) : (
         <Desktop
@@ -91,6 +94,7 @@ export default function OSShell({ data, initialApp = null }: { data: OSData; ini
           unreadCount={unreadCount}
           toast={toast}
           onDismissToast={dismissToast}
+          isAdmin={Boolean(profile?.isAdmin)}
         />
       )}
 

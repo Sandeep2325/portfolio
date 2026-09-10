@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { APP_CONFIGS, type AppId } from "@/lib/os-apps";
+import { visibleApps, type AppId } from "@/lib/os-apps";
 import type { OSData } from "@/lib/os-data";
 import type { UnreadItem } from "@/hooks/useDirectMessageNotifications";
 import { useWindowManager } from "@/hooks/useWindowManager";
@@ -23,9 +23,11 @@ interface DesktopProps {
   unreadCount: number;
   toast: UnreadItem | null;
   onDismissToast: () => void;
+  isAdmin: boolean;
 }
 
-export default function Desktop({ data, initialApp, unreadCount, toast, onDismissToast }: DesktopProps) {
+export default function Desktop({ data, initialApp, unreadCount, toast, onDismissToast, isAdmin }: DesktopProps) {
+  const apps = useMemo(() => visibleApps(isAdmin), [isAdmin]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const {
     windows,
@@ -80,7 +82,7 @@ export default function Desktop({ data, initialApp, unreadCount, toast, onDismis
       }
 
       if (event.metaKey || event.ctrlKey) {
-        const app = APP_CONFIGS.find((item) => item.shortcut === event.key);
+        const app = apps.find((item) => item.shortcut === event.key);
         if (app) {
           event.preventDefault();
           handleAppClick(app.id);
@@ -90,7 +92,7 @@ export default function Desktop({ data, initialApp, unreadCount, toast, onDismis
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [windows, closeWindow, paletteOpen, handleAppClick]);
+  }, [windows, closeWindow, paletteOpen, handleAppClick, apps]);
 
   const profile = data.profile;
 
@@ -150,7 +152,7 @@ export default function Desktop({ data, initialApp, unreadCount, toast, onDismis
 
       {/* Window layer */}
       <div className="pointer-events-none relative z-50 h-full w-full pt-8">
-        {APP_CONFIGS.map((app) => (
+        {apps.map((app) => (
           <div key={app.id} className="pointer-events-auto">
             <Window
               state={windows[app.id]}
@@ -172,7 +174,7 @@ export default function Desktop({ data, initialApp, unreadCount, toast, onDismis
         ))}
       </div>
 
-      <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} onAppOpen={handleAppClick} />
+      <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} onAppOpen={handleAppClick} apps={apps} />
 
       <MessageToast item={toast} onOpen={() => handleAppClick("messages")} onDismiss={onDismissToast} />
 
@@ -181,6 +183,7 @@ export default function Desktop({ data, initialApp, unreadCount, toast, onDismis
         onSearchClick={() => setPaletteOpen((open) => !open)}
         activeApps={activeApps}
         badges={{ messages: unreadCount }}
+        apps={apps}
       />
     </div>
   );

@@ -8,6 +8,7 @@ import {
   HiOutlineChatBubbleLeftRight,
   HiOutlineEnvelope,
   HiOutlineInboxArrowDown,
+  HiOutlineChartBar,
 } from "react-icons/hi2";
 
 export type AppId =
@@ -18,7 +19,8 @@ export type AppId =
   | "things"
   | "community"
   | "messages"
-  | "contact";
+  | "contact"
+  | "analytics";
 
 export interface AppConfig {
   id: AppId;
@@ -28,6 +30,8 @@ export interface AppConfig {
   /** Route this app deep-links to, so URLs stay shareable. */
   route: string;
   defaultSize: { width: number; height: number };
+  /** Hidden from the dock, palette and home screen unless the owner is signed in. */
+  adminOnly?: boolean;
 }
 
 export const APP_CONFIGS: AppConfig[] = [
@@ -39,7 +43,13 @@ export const APP_CONFIGS: AppConfig[] = [
   { id: "community", name: "Community.app", icon: HiOutlineChatBubbleLeftRight, shortcut: "6", route: "/community", defaultSize: { width: 700, height: 620 } },
   { id: "messages", name: "Messages.app", icon: HiOutlineInboxArrowDown, shortcut: "7", route: "/messages", defaultSize: { width: 640, height: 680 } },
   { id: "contact", name: "Contact.app", icon: HiOutlineEnvelope, shortcut: "8", route: "/contact", defaultSize: { width: 560, height: 580 } },
+  { id: "analytics", name: "Visitors.app", icon: HiOutlineChartBar, shortcut: "9", route: "/visitors", defaultSize: { width: 780, height: 640 }, adminOnly: true },
 ];
+
+/** The apps a given viewer may see. */
+export function visibleApps(isAdmin: boolean) {
+  return APP_CONFIGS.filter((app) => !app.adminOnly || isAdmin);
+}
 
 export const APP_IDS = APP_CONFIGS.map((app) => app.id);
 

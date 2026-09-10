@@ -2,64 +2,109 @@ import { NextResponse } from "next/server";
 import { OWNER_DISPLAY_NAME, getAdminUserId, getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
 import { createServerSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { DM_ATTACHMENT_BUCKET, MAX_ATTACHMENT_SIZE, extensionOf, resolveKind, type AttachmentKind } from "@/lib/attachments";
-import { resolveContacts, signAttachments, type Contact, type DirectMessageRow } from "@/lib/dm-server";
+import { resolveAnonContacts, resolveContacts, signAttachments, type Contact, type DirectMessageRow } from "@/lib/dm-server";
+import { resolveAnonVisitor, setVisitorCookie } from "@/lib/visitor-server";
+
+const UUID = /^[0-9a-f-]{36}$/i;
+
+async function ownerSummary() {
+  const { data } = await createServerSupabaseClient()
+    .from("profiles")
+    .select("id, last_seen_at")
+    .eq("is_super_admin", true)
+    .maybeSingle();
+  if (!data) return null;
+  return { id: data.id as string, label: OWNER_DISPLAY_NAME, lastSeenAt: (data.last_seen_at as string | null) || null };
+}
 
 export async function GET(request: Request) {
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Messages are not configured." }, { status: 500 });
-  const user = await getAuthenticatedUser(request);
-  if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
 
   // `since` asks for just what changed, so the client can re-sync cheaply after
   // a dropped socket without refetching the whole thread.
   const since = new URL(request.url).searchParams.get("since");
+  const supabase = createServerSupabaseClient();
+  const user = await getAuthenticatedUser(request);
+
+  // ---- Anonymous visitor: their own thread with the owner, nothing else ----
+  if (!user) {
+    try {
+      const { visitor, issuedToken } = await resolveAnonVisitor(request, { create: false });
+      const owner = await ownerSummary();
+
+      if (!visitor) {
+        return NextResponse.json({
+          messages: [],
+          anonymous: true,
+          admin: false,
+          userId: "",
+          contacts: [],
+          owner,
+          syncedAt: new Date().toISOString(),
+        });
+      }
+
+      let query = supabase.from("direct_messages").select("*").eq("anon_visitor_id", visitor.id);
+      if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since}`);
+      const { data, error } = await query.order("created_at", { ascending: true }).limit(500);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      const response = NextResponse.json({
+        messages: await signAttachments((data || []) as DirectMessageRow[]),
+        anonymous: true,
+        admin: false,
+        userId: visitor.id,
+        visitorLabel: visitor.label,
+        contacts: [],
+        owner,
+        syncedAt: new Date().toISOString(),
+      });
+      if (issuedToken) setVisitorCookie(response, issuedToken);
+      return response;
+    } catch (caught) {
+      return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
+    }
+  }
 
   try {
-    const supabase = createServerSupabaseClient();
     const admin = await isSuperAdmin(user.id);
 
-    let query = supabase
-      .from("direct_messages")
-      .select("*")
-      .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
-
-    // Catch new messages and freshly-stamped read receipts alike.
+    let query = supabase.from("direct_messages").select("*");
+    query = admin
+      // The owner also sees every anonymous thread.
+      ? query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id},anon_visitor_id.not.is.null`)
+      : query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
     if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since}`);
 
     const { data, error } = await query.order("created_at", { ascending: true }).limit(500);
-
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const rows = (data || []) as DirectMessageRow[];
 
     if (since) {
-      return NextResponse.json({ messages: await signAttachments(rows), admin, userId: user.id, syncedAt: new Date().toISOString() });
+      return NextResponse.json({
+        messages: await signAttachments(rows),
+        admin,
+        userId: user.id,
+        syncedAt: new Date().toISOString(),
+      });
     }
 
     let contacts: Contact[] = [];
-    let owner: { id: string; label: string; lastSeenAt: string | null } | null = null;
+    let owner: Awaited<ReturnType<typeof ownerSummary>> = null;
 
     if (admin) {
       const { data: guests } = await supabase.from("profiles").select("id").eq("is_super_admin", false);
       const guestIds = (guests || []).map((guest) => guest.id);
       const peerIdsFromMessages = rows
         .flatMap((message) => [message.sender_id, message.recipient_id])
-        .filter((id) => id !== user.id);
+        .filter((id): id is string => Boolean(id) && id !== user.id);
       const peerIds = Array.from(new Set([...guestIds, ...peerIdsFromMessages]));
-      contacts = (await resolveContacts(peerIds)).sort((left, right) => left.label.localeCompare(right.label));
+
+      const [accounts, anons] = await Promise.all([resolveContacts(peerIds), resolveAnonContacts()]);
+      contacts = [...accounts, ...anons].sort((left, right) => left.label.localeCompare(right.label));
     } else {
-      // Guests only ever talk to the owner, so ship that one peer's presence.
-      const { data: ownerProfile } = await supabase
-        .from("profiles")
-        .select("id, last_seen_at")
-        .eq("is_super_admin", true)
-        .maybeSingle();
-      if (ownerProfile) {
-        owner = {
-          id: ownerProfile.id as string,
-          label: OWNER_DISPLAY_NAME,
-          lastSeenAt: (ownerProfile.last_seen_at as string | null) || null,
-        };
-      }
+      owner = await ownerSummary();
     }
 
     return NextResponse.json({
@@ -77,8 +122,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Messages are not configured." }, { status: 500 });
-  const user = await getAuthenticatedUser(request);
-  if (!user) return NextResponse.json({ error: "Please sign in to send a direct message." }, { status: 401 });
 
   const form = await request.formData();
   const message = String(form.get("body") || "").trim();
@@ -100,43 +143,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Attachments must be smaller than 20 MB." }, { status: 400 });
     }
     kind = resolveKind(file.type, file.name);
-    if (!kind) {
-      return NextResponse.json({ error: "That file type is not supported." }, { status: 400 });
-    }
+    if (!kind) return NextResponse.json({ error: "That file type is not supported." }, { status: 400 });
   }
 
   try {
-    // These two are independent; serialising them added a round trip to every send.
-    const [adminId, admin] = await Promise.all([getAdminUserId(), isSuperAdmin(user.id)]);
+    const supabase = createServerSupabaseClient();
+    const user = await getAuthenticatedUser(request);
+    const [adminId, admin] = await Promise.all([getAdminUserId(), user ? isSuperAdmin(user.id) : Promise.resolve(false)]);
+
     if (!adminId) {
       return NextResponse.json({ error: "Admin account is not configured. Mark one profile as super admin first." }, { status: 503 });
     }
 
-    const target = admin ? recipientId : adminId;
-    if (!target || !/^[0-9a-f-]{36}$/i.test(target)) {
-      return NextResponse.json({ error: "Choose a recipient." }, { status: 400 });
-    }
-    if (target === user.id) {
-      return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
-    }
+    // Work out who the row belongs to before touching storage.
+    let rowIdentity: Pick<DirectMessageRow, "sender_id" | "recipient_id" | "anon_visitor_id">;
+    let issuedToken: string | null = null;
 
-    const supabase = createServerSupabaseClient();
+    if (!user) {
+      // Anonymous visitor writing to the owner.
+      const resolved = await resolveAnonVisitor(request, { create: true });
+      if (!resolved.visitor) return NextResponse.json({ error: "Could not identify this visitor." }, { status: 400 });
+      issuedToken = resolved.issuedToken;
+      rowIdentity = { sender_id: null, recipient_id: adminId, anon_visitor_id: resolved.visitor.id };
+    } else if (admin) {
+      if (!UUID.test(recipientId)) return NextResponse.json({ error: "Choose a recipient." }, { status: 400 });
 
-    if (admin) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, is_super_admin")
-        .eq("id", target)
-        .maybeSingle();
-      if (!profile || profile.is_super_admin) {
-        return NextResponse.json({ error: "Choose a guest account to message." }, { status: 400 });
+      // The id is either an anonymous visitor or a guest account.
+      const { data: anonTarget } = await supabase.from("anon_visitors").select("id").eq("id", recipientId).maybeSingle();
+      if (anonTarget) {
+        rowIdentity = { sender_id: user.id, recipient_id: null, anon_visitor_id: recipientId };
+      } else {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, is_super_admin")
+          .eq("id", recipientId)
+          .maybeSingle();
+        if (!profile || profile.is_super_admin) {
+          return NextResponse.json({ error: "Choose a guest account to message." }, { status: 400 });
+        }
+        rowIdentity = { sender_id: user.id, recipient_id: recipientId, anon_visitor_id: null };
       }
+    } else {
+      if (user.id === adminId) return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
+      rowIdentity = { sender_id: user.id, recipient_id: adminId, anon_visitor_id: null };
     }
 
     let attachment: Partial<DirectMessageRow> = {};
     if (file && kind) {
       const extension = extensionOf(file.name) || (kind === "audio" ? "webm" : "bin");
-      const path = `${user.id}/${crypto.randomUUID()}.${extension}`;
+      const owner = rowIdentity.sender_id || rowIdentity.anon_visitor_id || "anon";
+      const path = `${owner}/${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage
         .from(DM_ATTACHMENT_BUCKET)
         .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
@@ -149,21 +205,24 @@ export async function POST(request: Request) {
         attachment_name: file.name.slice(0, 200),
         attachment_mime: file.type || null,
         attachment_size: file.size,
-        attachment_duration_ms: kind === "audio" && Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs) : null,
+        attachment_duration_ms:
+          kind === "audio" && Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs) : null,
       };
     }
 
     const { data, error } = await supabase
       .from("direct_messages")
       // An attachment-only message stores a single space to satisfy the body length check.
-      .insert({ sender_id: user.id, recipient_id: target, body: message || " ", ...attachment })
+      .insert({ ...rowIdentity, body: message || " ", ...attachment })
       .select()
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const [signed] = await signAttachments([data as DirectMessageRow]);
-    return NextResponse.json({ message: signed }, { status: 201 });
+    const response = NextResponse.json({ message: signed }, { status: 201 });
+    if (issuedToken) setVisitorCookie(response, issuedToken);
+    return response;
   } catch (caught) {
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
   }

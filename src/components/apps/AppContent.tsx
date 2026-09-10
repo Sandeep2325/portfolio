@@ -10,6 +10,7 @@ import ThingsApp from "./ThingsApp";
 import CommunityApp from "./CommunityApp";
 import MessagesApp from "./MessagesApp";
 import ContactApp from "./ContactApp";
+import AnalyticsApp from "./AnalyticsApp";
 
 interface AppContentProps {
   id: AppId;
@@ -38,6 +39,8 @@ export default function AppContent({ id, data, onOpenApp, isVisible = true }: Ap
       return <MessagesApp isVisible={isVisible} />;
     case "contact":
       return <ContactApp data={data} />;
+    case "analytics":
+      return <AnalyticsApp />;
     default:
       return null;
   }

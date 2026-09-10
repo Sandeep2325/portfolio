@@ -2,20 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { HiOutlineMagnifyingGlass } from "react-icons/hi2";
-import { APP_CONFIGS, type AppId } from "@/lib/os-apps";
+import { type AppConfig, type AppId } from "@/lib/os-apps";
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   onAppOpen: (id: AppId) => void;
+  apps: AppConfig[];
 }
 
-export default function CommandPalette({ isOpen, onClose, onAppOpen }: CommandPaletteProps) {
+export default function CommandPalette({ isOpen, onClose, onAppOpen, apps }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const results = APP_CONFIGS.filter((app) => app.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const results = apps.filter((app) => app.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   useEffect(() => {
     if (!isOpen) return;

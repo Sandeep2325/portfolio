@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  HiOutlineEyeSlash,
   HiOutlinePhoto,
   HiOutlinePaperClip,
   HiOutlineMicrophone,
@@ -30,6 +31,8 @@ const PRESENCE_POLL_MS = 60_000;
 const RESIGN_INTERVAL_MS = 50 * 60_000;
 /** Backstop sync, in case realtime silently misses something. */
 const CATCH_UP_INTERVAL_MS = 20_000;
+/** Anonymous visitors get no realtime (RLS blocks it), so they poll faster. */
+const ANON_CATCH_UP_INTERVAL_MS = 5_000;
 const REJOIN_DELAY_MS = 1500;
 
 type Message = {
@@ -50,7 +53,7 @@ type Message = {
   status?: "sending" | "failed";
 };
 
-type Contact = { id: string; email: string; username: string | null; label: string; lastSeenAt: string | null };
+type Contact = { id: string; kind: "user" | "anon"; email: string; username: string | null; label: string; lastSeenAt: string | null; ip?: string | null };
 type Owner = { id: string; label: string; lastSeenAt: string | null };
 type Pending = { file: File; kind: AttachmentKind; previewUrl: string | null; durationMs: number | null };
 type RetryPayload = { text: string; file: File | null; durationMs: number | null };
@@ -91,6 +94,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const [peerLastSeen, setPeerLastSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const [anonymous, setAnonymous] = useState(false);
+  const [visitorLabel, setVisitorLabel] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
@@ -115,10 +120,15 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     return () => setActiveConversation(null);
   }, [peerId, isVisible]);
 
+  const authHeaders = useCallback(
+    (extra: Record<string, string> = {}) => (token ? { ...extra, Authorization: `Bearer ${token}` } : extra),
+    [token],
+  );
+
   /** Fetches fresh signed URLs for the given messages. */
   const signAttachments = useCallback(async (ids: number[], accessToken: string) => {
     const real = ids.filter((id) => id > 0);
-    if (real.length === 0 || !accessToken) return;
+    if (real.length === 0) return;
     try {
       const response = await fetch("/api/messages/attachments", {
         method: "POST",
@@ -140,10 +150,10 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   /** Pulls anything created or read since the last successful sync. */
   const catchUp = useCallback(
     async (accessToken: string) => {
-      if (!accessToken || !syncedAtRef.current) return;
+      if (!syncedAtRef.current) return;
       try {
         const response = await fetch(`/api/messages?since=${encodeURIComponent(syncedAtRef.current)}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
           cache: "no-store",
         });
         if (!response.ok) return;
@@ -167,9 +177,10 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token || "";
       setToken(accessToken);
-      if (!accessToken) return;
 
-      const response = await fetch("/api/messages", { headers: { Authorization: `Bearer ${accessToken}` } });
+      const response = await fetch("/api/messages", {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      });
       const payload = await response.json();
       if (!response.ok) {
         setError(payload.error || "Could not load messages.");
@@ -181,6 +192,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       setUserId(payload.userId);
       setContacts(payload.contacts || []);
       setOwner(payload.owner || null);
+      setAnonymous(Boolean(payload.anonymous));
+      setVisitorLabel(payload.visitorLabel || "");
       syncedAtRef.current = payload.syncedAt || new Date().toISOString();
       if (payload.owner) setPeerLastSeen(payload.owner.lastSeenAt);
     })();
@@ -188,7 +201,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
   // Realtime, with re-auth on token refresh and a rejoin if the channel dies.
   useEffect(() => {
-    if (!browserSupabase || !userId || !token) return;
+    if (!browserSupabase || !userId || !token || anonymous) return;
     const supabase = browserSupabase;
 
     let channel: ReturnType<typeof supabase.channel> | undefined;
@@ -248,15 +261,15 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       if (rejoinTimer) clearTimeout(rejoinTimer);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [userId, token, signAttachments, catchUp]);
+  }, [userId, token, anonymous, signAttachments, catchUp]);
 
   // Backstop: re-sync when the tab comes back and on a slow timer.
   useEffect(() => {
-    if (!token) return;
+    if (!token && !anonymous) return;
     const run = () => {
       if (document.visibilityState === "visible") void catchUp(token);
     };
-    const timer = setInterval(run, CATCH_UP_INTERVAL_MS);
+    const timer = setInterval(run, anonymous ? ANON_CATCH_UP_INTERVAL_MS : CATCH_UP_INTERVAL_MS);
     window.addEventListener("focus", run);
     document.addEventListener("visibilitychange", run);
     return () => {
@@ -264,7 +277,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       window.removeEventListener("focus", run);
       document.removeEventListener("visibilitychange", run);
     };
-  }, [token, catchUp]);
+  }, [token, anonymous, catchUp]);
 
   // Signed URLs expire, so re-sign everything still on screen periodically.
   useEffect(() => {
@@ -289,7 +302,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     const poll = async () => {
       try {
         const response = await fetch(`/api/presence?userId=${peerId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: authHeaders(),
           cache: "no-store",
         });
         if (!response.ok || cancelled) return;
@@ -306,7 +319,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       cancelled = true;
       clearInterval(timer);
     };
-  }, [token, peerId]);
+  }, [token, peerId, authHeaders]);
 
   const visibleMessages = useMemo(() => {
     if (!admin) return messages;
@@ -315,14 +328,14 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   }, [admin, messages, recipientId]);
 
   const markRead = useCallback(async () => {
-    if (!token || !peerId || !isVisible || document.visibilityState !== "visible") return;
+    if ((!token && !anonymous) || !peerId || !isVisible || document.visibilityState !== "visible") return;
     const unread = visibleMessages.filter((message) => message.sender_id === peerId && !message.read_at);
     if (unread.length === 0) return;
 
     try {
       const response = await fetch("/api/messages/read", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ peerId }),
       });
       if (!response.ok) return;
@@ -332,7 +345,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     } catch {
       // Retried the next time this effect runs.
     }
-  }, [token, peerId, visibleMessages, isVisible]);
+  }, [token, anonymous, peerId, visibleMessages, isVisible, authHeaders]);
 
   useEffect(() => {
     void markRead();
@@ -403,7 +416,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
         const response = await fetch("/api/messages", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: authHeaders(),
           body: payload,
         });
         const data = await response.json();
@@ -434,7 +447,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         );
       }
     },
-    [token],
+    [authHeaders],
   );
 
   function send(event: FormEvent<HTMLFormElement>) {
@@ -501,17 +514,6 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     setMessages((current) => current.filter((item) => item.id !== optimisticId));
   }
 
-  if (!token) {
-    return (
-      <section className="surface px-6 py-8">
-        <h2 className="font-display text-xl font-semibold">Sign in to use direct messages</h2>
-        <p className="mt-2 text-[var(--muted)]">
-          Guest accounts can send private messages, photos, voice notes and documents directly to Sandeep.
-        </p>
-      </section>
-    );
-  }
-
   const blocked = admin && !recipientId;
   const active = peerOnline || isRecentlyActive(peerLastSeen);
   const lastSeenLabel = relativeTime(peerLastSeen);
@@ -528,6 +530,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
             <p className="dm-presence">
               <span className={active ? "dm-dot online" : "dm-dot"} />
               <strong>{peerLabel}</strong>
+              {selectedContact?.kind === "anon" && <span className="dm-anon-tag">anonymous</span>}
               {peerTyping ? (
                 <span className="dm-typing-label">typing…</span>
               ) : active ? (
@@ -542,15 +545,26 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         </div>
       </div>
 
-      <NotificationSetting />
+      {anonymous ? (
+        <p className="dm-notify">
+          <HiOutlineEyeSlash className="h-4 w-4 flex-shrink-0" />
+          You&apos;re messaging anonymously{visitorLabel ? ` as ${visitorLabel}` : ""}. Replies appear here on this device.{" "}
+          <a href="/login" className="text-link">
+            Sign in
+          </a>{" "}
+          to keep your history and get notifications.
+        </p>
+      ) : (
+        <NotificationSetting />
+      )}
 
       {admin && (
         <select value={recipientId} onChange={(event) => setRecipientId(event.target.value)}>
           <option value="">Choose a guest to message</option>
           {contacts.map((contact) => (
             <option value={contact.id} key={contact.id}>
-              {contact.label}
-              {contact.username ? ` · ${contact.email}` : ""}
+              {contact.kind === "anon" ? `👤 ${contact.label} · ${contact.ip || "unknown IP"}` : contact.label}
+              {contact.kind === "user" && contact.username ? ` · ${contact.email}` : ""}
             </option>
           ))}
         </select>

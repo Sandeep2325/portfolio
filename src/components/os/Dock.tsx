@@ -1,7 +1,7 @@
 "use client";
 
 import { HiOutlineMagnifyingGlass } from "react-icons/hi2";
-import { APP_CONFIGS, type AppId } from "@/lib/os-apps";
+import { type AppConfig, type AppId } from "@/lib/os-apps";
 
 interface DockProps {
   onAppClick: (id: AppId) => void;
@@ -9,13 +9,14 @@ interface DockProps {
   activeApps: AppId[];
   /** Unread counts keyed by app id, rendered as a badge on the icon. */
   badges?: Partial<Record<AppId, number>>;
+  apps: AppConfig[];
 }
 
-export default function Dock({ onAppClick, onSearchClick, activeApps, badges }: DockProps) {
+export default function Dock({ onAppClick, onSearchClick, activeApps, badges, apps }: DockProps) {
   return (
     <div className="fixed bottom-2 left-1/2 z-[100] -translate-x-1/2 px-2 md:bottom-4 md:px-0">
       <div className="glass-dock scrollbar-hide flex max-w-[96vw] gap-1.5 overflow-x-auto px-2 py-2 md:gap-3 md:px-4 md:py-3">
-        {APP_CONFIGS.map((app) => (
+        {apps.map((app) => (
           <button
             key={app.id}
             type="button"

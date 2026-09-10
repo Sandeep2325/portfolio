@@ -1074,6 +1074,58 @@ body {
   flex-shrink: 0;
 }
 
+/* Visit log table */
+.visit-table {
+  margin-top: 1rem;
+  overflow-x: auto;
+  font-size: 0.84rem;
+}
+
+.visit-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.1fr) 70px minmax(150px, 1.2fr) minmax(170px, 1.4fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  min-width: 560px;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--surface-border);
+  color: var(--ink-soft);
+}
+
+.visit-row.three {
+  grid-template-columns: minmax(170px, 1.3fr) minmax(120px, 1fr) minmax(120px, 1fr);
+  min-width: 460px;
+}
+
+.visit-row:last-child {
+  border-bottom: none;
+}
+
+.visit-head {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.visit-row em {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: normal;
+}
+
+.dm-anon-tag {
+  border: 1px solid hsl(270 100% 67% / 0.35);
+  border-radius: 9999px;
+  background: hsl(270 100% 67% / 0.15);
+  padding: 1px 6px;
+  color: hsl(270 100% 82%);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 /* Notification status row */
 .dm-notify {
   display: flex;

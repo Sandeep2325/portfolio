@@ -3,8 +3,9 @@ import { DM_ATTACHMENT_BUCKET, SIGNED_URL_TTL_SECONDS, type AttachmentKind } fro
 
 export type DirectMessageRow = {
   id: number;
-  sender_id: string;
-  recipient_id: string;
+  sender_id: string | null;
+  recipient_id: string | null;
+  anon_visitor_id?: string | null;
   body: string;
   image_path?: string | null;
   attachment_bucket?: string | null;
@@ -20,11 +21,14 @@ export type DirectMessageRow = {
 
 export type Contact = {
   id: string;
+  /** "user" for an account, "anon" for an anonymous visitor thread. */
+  kind: "user" | "anon";
   email: string;
   username: string | null;
-  /** What the UI shows: username when claimed, otherwise the email. */
+  /** What the UI shows: username when claimed, otherwise the email or guest label. */
   label: string;
   lastSeenAt: string | null;
+  ip?: string | null;
 };
 
 /**
@@ -68,7 +72,6 @@ export async function signAttachments(rows: DirectMessageRow[]) {
         size: row.attachment_size || 0,
         durationMs: row.attachment_duration_ms || null,
       },
-      // Kept so older consumers of image_url keep rendering.
       image_url: kind === "image" ? url : null,
     };
   });
@@ -89,6 +92,7 @@ export async function resolveContacts(userIds: string[]): Promise<Contact[]> {
       const username = (profile?.username as string | null) || null;
       return {
         id,
+        kind: "user" as const,
         email,
         username,
         label: username || email,
@@ -96,4 +100,32 @@ export async function resolveContacts(userIds: string[]): Promise<Contact[]> {
       };
     }),
   );
+}
+
+/** Anonymous visitors that have an open thread with the owner. */
+export async function resolveAnonContacts(): Promise<Contact[]> {
+  const supabase = createServerSupabaseClient();
+
+  const { data: threads } = await supabase
+    .from("direct_messages")
+    .select("anon_visitor_id")
+    .not("anon_visitor_id", "is", null);
+
+  const ids = Array.from(new Set((threads || []).map((row) => row.anon_visitor_id as string)));
+  if (ids.length === 0) return [];
+
+  const { data: visitors } = await supabase
+    .from("anon_visitors")
+    .select("id, label, ip, last_seen_at")
+    .in("id", ids);
+
+  return (visitors || []).map((visitor) => ({
+    id: visitor.id as string,
+    kind: "anon" as const,
+    email: (visitor.ip as string | null) || "unknown IP",
+    username: null,
+    label: visitor.label as string,
+    lastSeenAt: (visitor.last_seen_at as string | null) || null,
+    ip: (visitor.ip as string | null) || null,
+  }));
 }

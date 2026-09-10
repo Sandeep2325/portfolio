@@ -1087,21 +1087,22 @@ body {
 .dm-preview {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   border: 1px solid var(--surface-border);
-  border-radius: 0.6rem;
+  border-radius: 0.5rem;
   background: hsl(220 15% 20% / 0.5);
-  padding: 0.5rem 0.6rem;
+  padding: 0.3rem 0.45rem;
 }
 
 .dm-preview img {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 0.4rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  border-radius: 0.3rem;
   object-fit: cover;
 }
 
-.dm-preview span {
+.dm-preview-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1134,7 +1135,9 @@ body {
 .messages-panel {
   display: flex;
   flex-direction: column;
-  min-height: 320px;
+  /* No min-height: it must be free to fit whatever the window gives it, or the
+     composer slides under the mobile nav bar on short screens. */
+  min-height: 0;
   height: 100%;
   overflow: hidden;
 }
@@ -1548,16 +1551,109 @@ body {
 .dm-preview-icon {
   display: grid;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
+  width: 1.75rem;
+  height: 1.75rem;
   flex-shrink: 0;
-  border-radius: 0.4rem;
+  border-radius: 0.3rem;
   background: hsl(207 100% 65% / 0.15);
   color: hsl(207 100% 75%);
 }
 
 .dm-preview .dm-audio-player {
-  max-width: 200px;
+  height: 1.9rem;
+  max-width: 170px;
+}
+
+/*
+ * Short viewports (browser chrome, or an open keyboard) leave very little
+ * height. Keep the fixed layout - if the panel is allowed to grow it slides
+ * under the fixed nav bar - and shrink the chrome instead so the composer
+ * always fits inside the window.
+ */
+@media (max-height: 560px) {
+  /* The nav bar is 69px, so 74px of clearance still keeps content above it
+     while returning a few pixels to the composer. */
+  .mobile-app-body {
+    padding-bottom: 74px;
+    padding-top: 0.5rem;
+  }
+
+  .messages-panel {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+
+  .messages-panel .dm-header {
+    padding-bottom: 0.45rem;
+  }
+
+  .messages-panel .dm-header h2 {
+    font-size: 0.95rem;
+  }
+
+  /* The peer's name stays in the title; the status line is the first thing
+     worth sacrificing for composer space. */
+  .messages-panel .dm-presence {
+    font-size: 0.74rem;
+  }
+
+  .dm-form {
+    gap: 0.35rem;
+  }
+
+  .dm-form textarea {
+    height: 2.6rem;
+    min-height: 2.6rem;
+  }
+
+  .dm-attach {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .dm-form-footer .primary-button {
+    padding: 0.4rem 0.85rem;
+  }
+}
+
+@media (max-height: 430px) {
+  .messages-panel .dm-presence {
+    display: none;
+  }
+
+  .dm-list {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /*
+   * At this height the nav bar and the 80px of clearance it needs cost more
+   * than the composer itself. Hide it and reclaim the space - the app header
+   * still has its own back button.
+   */
+  .mobile-nav {
+    display: none;
+  }
+
+  .mobile-app-body {
+    padding-bottom: 0.75rem;
+  }
+}
+
+@media (max-height: 380px) {
+  .messages-panel {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .dm-list {
+    margin-top: 0.35rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .dm-form textarea {
+    height: 2.3rem;
+    min-height: 2.3rem;
+  }
 }
 
 /* Recording bar */

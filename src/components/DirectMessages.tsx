@@ -687,7 +687,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
                 <HiOutlinePaperClip className="h-5 w-5" />
               </span>
             )}
-            <span>
+            <span className="dm-preview-name">
               {pending.kind === "audio" ? `Voice message · ${formatDuration(pending.durationMs)}` : pending.file.name}
               {pending.kind !== "audio" ? ` · ${formatBytes(pending.file.size)}` : ""}
             </span>

@@ -23,7 +23,7 @@ export default function MobileNavigationBar({
   onRecents,
 }: MobileNavigationBarProps) {
   return (
-    <div className="safe-area-bottom fixed bottom-0 left-0 right-0 z-[10001]">
+    <div className="mobile-nav safe-area-bottom fixed bottom-0 left-0 right-0 z-[10001]">
       <div className="mx-auto flex max-w-md items-center justify-between rounded-t-3xl border-t border-white/10 bg-black/70 px-10 py-3 backdrop-blur-2xl">
         <button
           type="button"

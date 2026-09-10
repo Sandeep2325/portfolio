@@ -1241,6 +1241,148 @@ body {
   }
 }
 
+/* People management (owner only) */
+.people-purge {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+/* Needs to out-specify `.surface input:not([type="file"])`, which sets
+   width:100% and would stretch the box away from its label. */
+.surface .people-purge input[type="checkbox"] {
+  margin-top: 0.15rem;
+  width: 1rem;
+  min-width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  padding: 0;
+  accent-color: hsl(207 100% 65%);
+}
+
+.people-heading {
+  margin-top: 1.4rem;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.people-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.people-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.6rem;
+  background: hsl(220 20% 18% / 0.4);
+  padding: 0.55rem 0.7rem;
+}
+
+.people-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, hsl(207 100% 65% / 0.25), hsl(270 100% 67% / 0.25));
+  color: hsl(207 100% 78%);
+}
+
+.people-avatar.anon {
+  background: hsl(270 100% 67% / 0.18);
+  color: hsl(270 100% 82%);
+}
+
+.people-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.people-main strong {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-main em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-meta {
+  display: grid;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.people-meta em {
+  font-style: normal;
+  opacity: 0.75;
+}
+
+.people-delete {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid hsl(0 84% 60% / 0.35);
+  border-radius: 9999px;
+  padding: 0.35rem 0.7rem;
+  color: #f87171;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.people-delete:hover {
+  background: hsl(0 84% 60% / 0.15);
+}
+
+.people-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.people-locked {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+@media (max-width: 560px) {
+  .people-row {
+    flex-wrap: wrap;
+  }
+
+  .people-meta {
+    text-align: left;
+  }
+}
+
 /* Visit log table */
 .visit-table {
   margin-top: 1rem;

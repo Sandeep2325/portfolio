@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { HiOutlineGlobeAlt, HiOutlineUsers, HiOutlineClock, HiOutlineArrowPath } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { relativeTime } from "@/lib/relative-time";
+import PeopleAdmin from "./PeopleAdmin";
 
 type Totals = { visits: number; uniqueIps: number; last24h: number; last7d: number };
 type Visitor = { ip: string; visits: number; firstSeen: string; lastSeen: string; paths: string[] };
@@ -68,6 +69,8 @@ export default function AnalyticsApp() {
       </section>
 
       {error && <p className="feed-error">{error}</p>}
+
+      <PeopleAdmin />
 
       {totals && (
         <section className="card-grid cols-2">

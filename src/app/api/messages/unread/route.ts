@@ -33,6 +33,9 @@ export async function GET(request: Request) {
       .select("id, sender_id, anon_visitor_id, body, attachment_kind, created_at")
       .eq("recipient_id", user.id)
       .is("read_at", null)
+      // A deleted message is not something to be notified about.
+      .is("deleted_for_everyone_at", null)
+      .is("deleted_by_recipient_at", null)
       .order("created_at", { ascending: true })
       .limit(100);
 

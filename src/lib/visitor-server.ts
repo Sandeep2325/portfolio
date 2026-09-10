@@ -52,9 +52,9 @@ function labelFor(seed: string) {
 /**
  * Finds (or creates) the anonymous visitor behind a request.
  *
- * The cookie token is authoritative when present. Falling back to the IP is
- * what makes a first message work before any cookie exists, and keeps the
- * identifier the owner asked for.
+ * Identity comes from the httpOnly cookie only. The IP is captured onto the
+ * visitor and every visit for the owner's reporting, but it is never used to
+ * match an existing visitor - see the note below.
  */
 export async function resolveAnonVisitor(
   request: Request,
@@ -76,25 +76,11 @@ export async function resolveAnonVisitor(
     }
   }
 
-  // No usable cookie: reuse the most recent visitor from this IP so a reply
-  // lands in the same thread, otherwise start a new one.
-  if (ip) {
-    const { data } = await supabase
-      .from("anon_visitors")
-      .select("*")
-      .eq("ip", ip)
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (data) {
-      await supabase
-        .from("anon_visitors")
-        .update({ last_seen_at: new Date().toISOString(), user_agent: userAgent })
-        .eq("id", data.id);
-      return { visitor: data as AnonVisitor, issuedToken: (data as AnonVisitor).token };
-    }
-  }
+  // Deliberately no IP fallback here. Resolving an existing visitor by IP
+  // meant anyone sharing a public address - an office, a cafe, or localhost -
+  // was treated as the same person, and could therefore read and delete a
+  // stranger's anonymous thread. The IP is still recorded on the row and shown
+  // to the owner; the cookie is what proves identity.
 
   if (!options.create) return { visitor: null, issuedToken: null };
 

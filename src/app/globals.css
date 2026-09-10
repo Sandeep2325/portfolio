@@ -1407,6 +1407,101 @@ body {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* Per-message delete menu */
+.dm {
+  position: relative;
+}
+
+.dm-menu {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.2rem;
+  z-index: 4;
+}
+
+.dm-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 9999px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.dm:hover .dm-menu-trigger,
+.dm-menu-trigger:focus-visible {
+  opacity: 1;
+}
+
+/* No hover on touch, so keep the control permanently discoverable. */
+@media (hover: none) {
+  .dm-menu-trigger {
+    opacity: 0.55;
+  }
+}
+
+.dm-menu-trigger:hover {
+  background: hsl(220 15% 40% / 0.4);
+  color: var(--text);
+}
+
+.dm-menu-list {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 11rem;
+  overflow: hidden;
+  border: 1px solid var(--os-glass-border);
+  border-radius: 0.5rem;
+  background: hsl(220 20% 14% / 0.98);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--os-shadow-lg);
+}
+
+.dm-menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dm-menu-list button:hover {
+  background: hsl(220 15% 26% / 0.8);
+  color: var(--text);
+}
+
+.dm-menu-list button.danger {
+  color: #f87171;
+}
+
+.dm-menu-list button.danger:hover {
+  background: hsl(0 84% 60% / 0.15);
+}
+
+/* Deleted-for-everyone tombstone */
+.dm.dm-removed {
+  border-style: dashed;
+  background: hsl(220 15% 20% / 0.4);
+}
+
+.dm-removed-text {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-style: italic;
+}
+
 /* Optimistic send states */
 .dm.dm-sending {
   opacity: 0.72;

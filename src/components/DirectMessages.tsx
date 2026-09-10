@@ -8,6 +8,8 @@ import {
   HiOutlineMicrophone,
   HiOutlineStop,
   HiOutlineArrowPath,
+  HiOutlineEllipsisHorizontal,
+  HiOutlineTrash,
 } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
@@ -52,6 +54,7 @@ type Message = {
   attachment_duration_ms?: number | null;
   attachment?: MessageAttachmentData | null;
   read_at?: string | null;
+  deleted_for_everyone_at?: string | null;
   created_at: string;
   /** Set only on locally-created bubbles that have not been confirmed yet. */
   status?: "sending" | "failed";
@@ -98,6 +101,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const [peerLastSeen, setPeerLastSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const [menuFor, setMenuFor] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [anonymous, setAnonymous] = useState(false);
   const [visitorLabel, setVisitorLabel] = useState("");
 
@@ -131,6 +136,18 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     },
     [anonymous, userId],
   );
+
+  useEffect(() => {
+    if (menuFor === null) return;
+    // pointerdown fires before click, so a naive close would unmount the menu
+    // item before its own click could land. Ignore presses inside the menu.
+    const close = (event: PointerEvent) => {
+      if ((event.target as HTMLElement | null)?.closest?.(".dm-menu")) return;
+      setMenuFor(null);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuFor]);
 
   // Suppress banners only while this thread is genuinely on screen. A minimized
   // window keeps this component mounted, and claiming focus from there would
@@ -256,7 +273,17 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, (event) => {
           const updated = event.new as Message;
           setMessages((current) =>
-            current.map((item) => (item.id === updated.id ? { ...item, read_at: updated.read_at } : item)),
+            current.map((item) =>
+              item.id === updated.id
+                ? {
+                    ...item,
+                    read_at: updated.read_at,
+                    deleted_for_everyone_at: updated.deleted_for_everyone_at,
+                    // A tombstone drops its content on both sides.
+                    ...(updated.deleted_for_everyone_at ? { body: " ", attachment: null } : {}),
+                  }
+                : item,
+            ),
           );
         })
         .subscribe((status) => {
@@ -531,6 +558,44 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     void deliver(optimisticId, payloadData, recipientId);
   }
 
+  async function remove(messageId: number, scope: "me" | "everyone") {
+    if (deletingId !== null) return;
+    if (scope === "everyone" && !window.confirm("Delete this message for everyone? This cannot be undone.")) return;
+
+    setMenuFor(null);
+    setDeletingId(messageId);
+    setError("");
+    try {
+      const response = await fetch("/api/messages", {
+        method: "DELETE",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ messageId, scope }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Could not delete message.");
+        return;
+      }
+
+      if (scope === "me") {
+        setMessages((current) => current.filter((item) => item.id !== messageId));
+      } else {
+        // Both sides show a tombstone; the peer gets it over realtime.
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === messageId
+              ? { ...item, deleted_for_everyone_at: new Date().toISOString(), body: " ", attachment: null }
+              : item,
+          ),
+        );
+      }
+    } catch {
+      setError("Could not delete message. Check your connection.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   function retry(optimisticId: number) {
     const payloadData = retryPayloads.current.get(optimisticId);
     if (!payloadData) return;
@@ -606,15 +671,62 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         ) : (
           visibleMessages.map((message) => {
             const outgoing = !isIncoming(message);
+            const removed = Boolean(message.deleted_for_everyone_at);
+            // Only a confirmed message can be deleted, and "for everyone" is
+            // the sender's call (the owner can moderate anything).
+            const canDelete = message.id > 0 && !message.status;
+            const canDeleteForAll = canDelete && !removed && (outgoing || admin);
+
             return (
               <div
                 className={`${outgoing ? "dm outgoing" : "dm incoming"}${message.status === "sending" ? " dm-sending" : ""}${
                   message.status === "failed" ? " dm-failed" : ""
-                }`}
+                }${removed ? " dm-removed" : ""}`}
                 key={message.id}
               >
-                {message.body.trim() ? <p>{message.body}</p> : null}
-                {message.attachment ? <MessageAttachment attachment={message.attachment} /> : null}
+                {canDelete && (
+                  <div className="dm-menu">
+                    <button
+                      type="button"
+                      className="dm-menu-trigger"
+                      aria-label="Message options"
+                      disabled={deletingId === message.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setMenuFor((current) => (current === message.id ? null : message.id));
+                      }}
+                    >
+                      <HiOutlineEllipsisHorizontal className="h-4 w-4" />
+                    </button>
+
+                    {menuFor === message.id && (
+                      <div className="dm-menu-list" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" onClick={() => void remove(message.id, "me")}>
+                          <HiOutlineTrash className="h-3.5 w-3.5" />
+                          Delete for me
+                        </button>
+                        {canDeleteForAll && (
+                          <button type="button" className="danger" onClick={() => void remove(message.id, "everyone")}>
+                            <HiOutlineTrash className="h-3.5 w-3.5" />
+                            Delete for everyone
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {removed ? (
+                  <p className="dm-removed-text">
+                    <HiOutlineTrash className="h-3.5 w-3.5" />
+                    This message was deleted
+                  </p>
+                ) : (
+                  <>
+                    {message.body.trim() ? <p>{message.body}</p> : null}
+                    {message.attachment ? <MessageAttachment attachment={message.attachment} /> : null}
+                  </>
+                )}
 
                 {message.status === "failed" ? (
                   <div className="dm-retry">
@@ -630,7 +742,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
                 ) : (
                   <time>
                     {new Date(message.created_at).toLocaleString()}
-                    {outgoing && (
+                    {outgoing && !removed && (
                       <span className={message.read_at ? "dm-receipt read" : "dm-receipt"}>
                         {message.status === "sending" ? "· Sending…" : message.read_at ? "✓✓ Read" : "✓ Sent"}
                       </span>

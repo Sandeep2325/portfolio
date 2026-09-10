@@ -16,8 +16,64 @@ export type DirectMessageRow = {
   attachment_size?: number | null;
   attachment_duration_ms?: number | null;
   read_at?: string | null;
+  deleted_by_sender_at?: string | null;
+  deleted_by_recipient_at?: string | null;
+  deleted_for_everyone_at?: string | null;
   created_at: string;
 };
+
+/** Who is looking at a thread: an account, or an anonymous visitor. */
+export type Viewer = { userId: string | null; anonVisitorId: string | null };
+
+/**
+ * Whether the viewer is the party that sent this message. Anonymous threads
+ * cannot use sender_id alone, because it is null for whichever side the
+ * visitor sent.
+ */
+export function viewerIsSender(row: DirectMessageRow, viewer: Viewer) {
+  if (row.anon_visitor_id) {
+    return viewer.anonVisitorId ? row.sender_id === null : row.sender_id === viewer.userId;
+  }
+  return Boolean(viewer.userId) && row.sender_id === viewer.userId;
+}
+
+export function viewerIsParticipant(row: DirectMessageRow, viewer: Viewer) {
+  if (row.anon_visitor_id) {
+    if (viewer.anonVisitorId) return row.anon_visitor_id === viewer.anonVisitorId;
+    return row.sender_id === viewer.userId || row.recipient_id === viewer.userId;
+  }
+  return Boolean(viewer.userId) && (row.sender_id === viewer.userId || row.recipient_id === viewer.userId);
+}
+
+/** A message the viewer deleted just for themselves is dropped entirely. */
+export function hiddenFromViewer(row: DirectMessageRow, viewer: Viewer) {
+  return viewerIsSender(row, viewer) ? Boolean(row.deleted_by_sender_at) : Boolean(row.deleted_by_recipient_at);
+}
+
+/**
+ * Strips the content of a message deleted for everyone. Done server-side so
+ * the text never reaches the client to be hidden by CSS.
+ */
+export function tombstone(row: DirectMessageRow): DirectMessageRow {
+  if (!row.deleted_for_everyone_at) return row;
+  return {
+    ...row,
+    body: " ",
+    image_path: null,
+    attachment_bucket: null,
+    attachment_path: null,
+    attachment_kind: null,
+    attachment_name: null,
+    attachment_mime: null,
+    attachment_size: null,
+    attachment_duration_ms: null,
+  };
+}
+
+/** Applies both deletion rules before anything is signed or serialised. */
+export function applyDeletions(rows: DirectMessageRow[], viewer: Viewer) {
+  return rows.filter((row) => !hiddenFromViewer(row, viewer)).map(tombstone);
+}
 
 export type Contact = {
   id: string;

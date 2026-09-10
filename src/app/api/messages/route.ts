@@ -2,7 +2,17 @@ import { NextResponse } from "next/server";
 import { OWNER_DISPLAY_NAME, getAdminUserId, getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-server";
 import { createServerSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { DM_ATTACHMENT_BUCKET, MAX_ATTACHMENT_SIZE, extensionOf, resolveKind, type AttachmentKind } from "@/lib/attachments";
-import { resolveAnonContacts, resolveContacts, signAttachments, type Contact, type DirectMessageRow } from "@/lib/dm-server";
+import {
+  applyDeletions,
+  resolveAnonContacts,
+  resolveContacts,
+  signAttachments,
+  viewerIsParticipant,
+  viewerIsSender,
+  type Contact,
+  type DirectMessageRow,
+  type Viewer,
+} from "@/lib/dm-server";
 import { resolveAnonVisitor, setVisitorCookie } from "@/lib/visitor-server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -45,12 +55,13 @@ export async function GET(request: Request) {
       }
 
       let query = supabase.from("direct_messages").select("*").eq("anon_visitor_id", visitor.id);
-      if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since}`);
+      if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since},deleted_for_everyone_at.gt.${since}`);
       const { data, error } = await query.order("created_at", { ascending: true }).limit(500);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+      const viewer: Viewer = { userId: null, anonVisitorId: visitor.id };
       const response = NextResponse.json({
-        messages: await signAttachments((data || []) as DirectMessageRow[]),
+        messages: await signAttachments(applyDeletions((data || []) as DirectMessageRow[], viewer)),
         anonymous: true,
         admin: false,
         userId: visitor.id,
@@ -74,12 +85,13 @@ export async function GET(request: Request) {
       // The owner also sees every anonymous thread.
       ? query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id},anon_visitor_id.not.is.null`)
       : query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
-    if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since}`);
+    if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since},deleted_for_everyone_at.gt.${since}`);
 
     const { data, error } = await query.order("created_at", { ascending: true }).limit(500);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const rows = (data || []) as DirectMessageRow[];
+    const viewer: Viewer = { userId: user.id, anonVisitorId: null };
+    const rows = applyDeletions((data || []) as DirectMessageRow[], viewer);
 
     if (since) {
       return NextResponse.json({
@@ -223,6 +235,93 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ message: signed }, { status: 201 });
     if (issuedToken) setVisitorCookie(response, issuedToken);
     return response;
+  } catch (caught) {
+    return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
+  }
+}
+
+/**
+ * Deletes a message.
+ *   scope "me"       - hides it from the caller only.
+ *   scope "everyone" - tombstones it for both sides and drops the attachment.
+ *
+ * Only the message's sender may delete for everyone; the owner may do so on
+ * their own site as a moderation escape hatch.
+ */
+export async function DELETE(request: Request) {
+  if (!isSupabaseConfigured()) return NextResponse.json({ error: "Messages are not configured." }, { status: 500 });
+
+  const { messageId, scope } = (await request.json()) as { messageId?: number; scope?: "me" | "everyone" };
+  if (!Number.isInteger(messageId)) return NextResponse.json({ error: "Choose a message." }, { status: 400 });
+  if (scope !== "me" && scope !== "everyone") return NextResponse.json({ error: "Invalid delete scope." }, { status: 400 });
+
+  try {
+    const supabase = createServerSupabaseClient();
+    const user = await getAuthenticatedUser(request);
+
+    let viewer: Viewer;
+    if (user) {
+      viewer = { userId: user.id, anonVisitorId: null };
+    } else {
+      const { visitor } = await resolveAnonVisitor(request, { create: false });
+      if (!visitor) return NextResponse.json({ error: "Could not identify this visitor." }, { status: 401 });
+      viewer = { userId: null, anonVisitorId: visitor.id };
+    }
+
+    const { data: row, error: loadError } = await supabase
+      .from("direct_messages")
+      .select("*")
+      .eq("id", messageId)
+      .maybeSingle();
+
+    if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
+    if (!row) return NextResponse.json({ error: "Message not found." }, { status: 404 });
+
+    const message = row as DirectMessageRow;
+    if (!viewerIsParticipant(message, viewer)) {
+      return NextResponse.json({ error: "Message not found." }, { status: 404 });
+    }
+
+    const now = new Date().toISOString();
+
+    if (scope === "me") {
+      const column = viewerIsSender(message, viewer) ? "deleted_by_sender_at" : "deleted_by_recipient_at";
+      const { error } = await supabase.from("direct_messages").update({ [column]: now }).eq("id", messageId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ messageId, scope });
+    }
+
+    const isOwner = user ? await isSuperAdmin(user.id) : false;
+    if (!viewerIsSender(message, viewer) && !isOwner) {
+      return NextResponse.json({ error: "You can only delete your own messages for everyone." }, { status: 403 });
+    }
+
+    // Remove the stored file before clearing the row that points at it.
+    if (message.attachment_path) {
+      await supabase.storage
+        .from(message.attachment_bucket || DM_ATTACHMENT_BUCKET)
+        .remove([message.attachment_path])
+        .catch(() => undefined);
+    }
+
+    const { error } = await supabase
+      .from("direct_messages")
+      .update({
+        deleted_for_everyone_at: now,
+        body: " ",
+        attachment_bucket: null,
+        attachment_path: null,
+        attachment_kind: null,
+        attachment_name: null,
+        attachment_mime: null,
+        attachment_size: null,
+        attachment_duration_ms: null,
+        image_path: null,
+      })
+      .eq("id", messageId);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ messageId, scope });
   } catch (caught) {
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unexpected server error." }, { status: 500 });
   }

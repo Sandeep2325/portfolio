@@ -16,6 +16,9 @@ import {
   HiOutlineVideoCamera,
   HiOutlineEllipsisVertical,
   HiOutlineChevronLeft,
+  HiOutlinePhoneArrowUpRight,
+  HiOutlinePhoneArrowDownLeft,
+  HiOutlinePhoneXMark,
 } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
@@ -35,7 +38,7 @@ import MessageAttachment, { type MessageAttachmentData } from "./MessageAttachme
 import NotificationSetting from "./NotificationSetting";
 import CallPanel from "./CallPanel";
 import ConversationList, { type Person, type ThreadSummary } from "./ConversationList";
-import { useCall } from "@/hooks/useCall";
+import { useCall, type CallOutcome } from "@/hooks/useCall";
 
 const PRESENCE_POLL_MS = 60_000;
 /** Signed URLs last an hour; refresh a little before that. */
@@ -65,6 +68,9 @@ type Message = {
   read_at?: string | null;
   deleted_for_everyone_at?: string | null;
   reply_to_id?: number | null;
+  call_kind?: "voice" | "video" | null;
+  call_status?: "completed" | "missed" | "declined" | null;
+  call_duration_seconds?: number | null;
   reply_to?: ReplyPreview | null;
   created_at: string;
   /** Set only on locally-created bubbles that have not been confirmed yet. */
@@ -96,6 +102,16 @@ function previewOf(original: Message, viewerSent: boolean): ReplyPreview {
         ? KIND_EXCERPT[original.attachment_kind]
         : "Message";
   return { id: original.id, excerpt, outgoing: viewerSent, deleted: Boolean(original.deleted_for_everyone_at) };
+}
+
+/** Sidebar preview for a call event, mirroring the server's wording. */
+function callPreview(message: Message) {
+  if (!message.call_kind) return null;
+  const noun = message.call_kind === "video" ? "Video call" : "Voice call";
+  if (message.call_status === "declined") return `${noun} declined`;
+  if (message.call_status === "missed") return `Missed ${noun.toLowerCase()}`;
+  const total = message.call_duration_seconds || 0;
+  return `${noun} · ${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /** Mirrors the server's thread key so the client can group the same way. */
@@ -134,7 +150,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const [messages, setMessages] = useState<Message[]>([]);
   const [admin, setAdmin] = useState(false);
   const [userId, setUserId] = useState("");
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [serverThreads, setServerThreads] = useState<ThreadSummary[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [people, setPeople] = useState<Person[]>([]);
   const [activeKey, setActiveKey] = useState("");
@@ -163,23 +179,6 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
   const recorder = useAudioRecorder();
 
-  const activeThread = threads.find((thread) => thread.key === activeKey) || null;
-
-  // A draft is a chosen person with no messages yet; it behaves like a thread.
-  /*
-   * An anonymous visitor only ever has one conversation - with the owner - and
-   * it does not exist until their first message, so they must be able to write
-   * before any thread is on record.
-   */
-  const peerId = anonymous ? owner?.id || "" : draftPeer?.id || activeThread?.peerId || "";
-  const recipientId = anonymous ? "" : peerId;
-  const canWrite = anonymous ? true : Boolean(draftPeer) || (activeThread ? activeThread.participant : false);
-  const peerLabel =
-    draftPeer?.label || activeThread?.title || (anonymous ? owner?.label || "Sandeep Gowda" : "Select a chat");
-
-  const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
-  const call = useCall(userId, peerId);
-
   /**
    * Which side of the thread a message sits on. Anonymous threads cannot use
    * sender_id, because it is null for whichever side the visitor sent.
@@ -195,6 +194,68 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     },
     [anonymous, userId],
   );
+
+  const threads = useMemo(() => {
+    if (messages.length === 0) return serverThreads;
+    const ipByKey = new Map(serverThreads.map((thread) => [thread.key, thread.ip]));
+    const viewerId = userId;
+
+    const grouped = new Map<string, Message[]>();
+    for (const message of messages) {
+      const key = threadKeyOf(message);
+      grouped.set(key, [...(grouped.get(key) || []), message]);
+    }
+
+    return [...grouped.entries()]
+      .map(([key, group]) => {
+        const sorted = [...group].sort((left, right) => left.created_at.localeCompare(right.created_at));
+        const last = sorted[sorted.length - 1];
+        const anonId = last.anon_visitor_id || null;
+        const ids = (anonId
+          ? [anonId, last.sender_id || last.recipient_id]
+          : [last.sender_id, last.recipient_id]
+        ).filter((id): id is string => Boolean(id));
+
+        const participant = Boolean(viewerId && ids.includes(viewerId));
+        const peerId = participant ? ids.find((id) => id !== viewerId) || null : null;
+        const title = participant
+          ? labels[peerId || ""] || "Unknown"
+          : ids.map((id) => labels[id] || "Unknown").join(" ↔ ");
+
+        return {
+          key,
+          kind: anonId ? ("anon" as const) : ("pair" as const),
+          title,
+          subtitle: participant ? null : "not your conversation",
+          peerId,
+          participant,
+          lastBody: last.deleted_for_everyone_at
+            ? "Message deleted"
+            : callPreview(last) || (last.body || "").trim() || "Attachment",
+          lastAt: last.created_at,
+          unread: participant ? sorted.filter((item) => !item.read_at && isIncoming(item)).length : 0,
+          ip: ipByKey.get(key) ?? null,
+        };
+      })
+      .sort((left, right) => right.lastAt.localeCompare(left.lastAt));
+  }, [messages, serverThreads, labels, userId, isIncoming]);
+
+  const activeThread = threads.find((thread) => thread.key === activeKey) || null;
+
+  // A draft is a chosen person with no messages yet; it behaves like a thread.
+  /*
+   * An anonymous visitor only ever has one conversation - with the owner - and
+   * it does not exist until their first message, so they must be able to write
+   * before any thread is on record.
+   */
+  const peerId = anonymous ? owner?.id || "" : draftPeer?.id || activeThread?.peerId || "";
+  const recipientId = anonymous ? "" : peerId;
+  const canWrite = anonymous ? true : Boolean(draftPeer) || (activeThread ? activeThread.participant : false);
+  const peerLabel =
+    draftPeer?.label || activeThread?.title || (anonymous ? owner?.label || "Sandeep Gowda" : "Select a chat");
+
+  const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
+
 
   useEffect(() => {
     if (menuFor === null) return;
@@ -260,6 +321,36 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     }
   }, []);
 
+  /** The caller logs the call into the thread once it finishes. */
+  const logCall = useCallback(
+    async (outcome: CallOutcome) => {
+      try {
+        const accessToken = await currentToken();
+        const response = await fetch("/api/messages/call", {
+          method: "POST",
+          headers: accessToken
+            ? { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }
+            : { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recipientId,
+            callKind: outcome.kind,
+            callStatus: outcome.status,
+            durationSeconds: outcome.durationSeconds,
+          }),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const saved = hydrate(data.message as Message);
+        setMessages((current) => (current.some((item) => item.id === saved.id) ? current : merge(current, [saved])));
+      } catch {
+        // A missing history row should never surface as a call failure.
+      }
+    },
+    [currentToken, recipientId],
+  );
+
+  const call = useCall(userId, peerId, logCall);
+
   /** Pulls anything created or read since the last successful sync. */
   const catchUp = useCallback(
     async () => {
@@ -320,7 +411,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     setAdmin(payload.admin);
     setUserId(payload.userId);
     const nextThreads = (payload.threads || []) as ThreadSummary[];
-    setThreads(nextThreads);
+    setServerThreads(nextThreads);
     setLabels(payload.labels || {});
     // Keep the current chat selected across refreshes; otherwise open the newest.
     setActiveKey((current) => {
@@ -795,7 +886,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   }
 
   const blocked = !canWrite;
-  const spectating = Boolean(activeThread && !activeThread.participant);
+  const spectating = Boolean(!anonymous && activeThread && !activeThread.participant);
   const active = peerOnline || isRecentlyActive(peerLastSeen);
   const lastSeenLabel = relativeTime(peerLastSeen);
   const recording = recorder.state === "recording" || recorder.state === "requesting";
@@ -942,6 +1033,39 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         ) : (
           visibleMessages.map((message) => {
             const outgoing = spectating ? false : !isIncoming(message);
+
+            if (message.call_kind) {
+              const noun = message.call_kind === "video" ? "Video call" : "Voice call";
+              const missed = message.call_status !== "completed";
+              const total = message.call_duration_seconds || 0;
+              const detail =
+                message.call_status === "declined"
+                  ? "Declined"
+                  : message.call_status === "missed"
+                    ? outgoing
+                      ? "No answer"
+                      : "Missed"
+                    : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+
+              return (
+                <div className={`dm-call-event${missed ? " missed" : ""}`} key={message.id} id={`dm-${message.id}`}>
+                  <span className="dm-call-icon">
+                    {missed ? (
+                      <HiOutlinePhoneXMark className="h-4 w-4" />
+                    ) : outgoing ? (
+                      <HiOutlinePhoneArrowUpRight className="h-4 w-4" />
+                    ) : (
+                      <HiOutlinePhoneArrowDownLeft className="h-4 w-4" />
+                    )}
+                  </span>
+                  <span>
+                    {noun} · {detail}
+                  </span>
+                  <time>{new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+                </div>
+              );
+            }
+
             const removed = Boolean(message.deleted_for_everyone_at);
             // Only a confirmed message can be deleted, and "for everyone" is
             // the sender's call (the owner can moderate anything).

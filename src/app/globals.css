@@ -1838,6 +1838,42 @@ body {
   }
 }
 
+/* Call history entries sit in the thread, centred like a system note */
+.dm-call-event {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 90%;
+  border: 1px solid var(--surface-border);
+  border-radius: 9999px;
+  background: hsl(220 15% 20% / 0.5);
+  padding: 0.3rem 0.7rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.dm-call-event.missed {
+  border-color: hsl(0 84% 60% / 0.35);
+  color: #fca5a5;
+}
+
+.dm-call-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: hsl(142 71% 62%);
+}
+
+.dm-call-event.missed .dm-call-icon {
+  color: #f87171;
+}
+
+.dm-call-event time {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
 /* Call buttons in the panel header */
 .dm-call-btn {
   display: grid;

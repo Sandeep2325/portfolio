@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { DM_ATTACHMENT_BUCKET, SIGNED_URL_TTL_SECONDS, type AttachmentKind } from "@/lib/attachments";
 import { OWNER_DISPLAY_NAME as OWNER_LABEL } from "@/lib/auth-server";
+import { resolveAnonVisitor } from "@/lib/visitor-server";
 
 export type DirectMessageRow = {
   id: number;
@@ -21,6 +22,9 @@ export type DirectMessageRow = {
   deleted_by_recipient_at?: string | null;
   deleted_for_everyone_at?: string | null;
   reply_to_id?: number | null;
+  call_kind?: "voice" | "video" | null;
+  call_status?: "completed" | "missed" | "declined" | null;
+  call_duration_seconds?: number | null;
   created_at: string;
 };
 
@@ -113,8 +117,20 @@ const KIND_EXCERPT: Record<string, string> = {
   file: "📎 Attachment",
 };
 
+export function callSummary(row: DirectMessageRow) {
+  if (!row.call_kind) return null;
+  const noun = row.call_kind === "video" ? "Video call" : "Voice call";
+  if (row.call_status === "declined") return `${noun} declined`;
+  if (row.call_status === "missed") return `Missed ${noun.toLowerCase()}`;
+  const total = row.call_duration_seconds || 0;
+  const stamp = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  return `${noun} · ${stamp}`;
+}
+
 function excerptOf(row: DirectMessageRow) {
   if (row.deleted_for_everyone_at) return "This message was deleted";
+  const call = callSummary(row);
+  if (call) return call;
   const text = (row.body || "").trim();
   if (text) return text.length > 90 ? `${text.slice(0, 90)}…` : text;
   return row.attachment_kind ? KIND_EXCERPT[row.attachment_kind] : "Message";
@@ -350,11 +366,55 @@ export function buildThreads(
         subtitle: participant ? null : "not your conversation",
         peerId,
         participant,
-        lastBody: last.deleted_for_everyone_at ? "Message deleted" : (last.body || "").trim() || "Attachment",
+        lastBody: last.deleted_for_everyone_at
+          ? "Message deleted"
+          : callSummary(last) || (last.body || "").trim() || "Attachment",
         lastAt: last.created_at,
         unread: participant ? unread : 0,
         ip: anonId ? ips.get(anonId) || null : null,
       };
     })
     .sort((left, right) => right.lastAt.localeCompare(left.lastAt));
+}
+
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+
+export type RowIdentity = Pick<DirectMessageRow, "sender_id" | "recipient_id" | "anon_visitor_id">;
+
+/**
+ * Works out which conversation a new row belongs to, applying the same rules
+ * for messages and call events: anonymous visitors always reach the owner,
+ * only the owner may write into an anonymous thread, and any signed-in account
+ * may message any other.
+ */
+export async function resolveRowIdentity(options: {
+  request: Request;
+  userId: string | null;
+  admin: boolean;
+  adminId: string;
+  recipientId: string;
+}): Promise<{ identity?: RowIdentity; issuedToken?: string | null; error?: string; status?: number }> {
+  const supabase = createServerSupabaseClient();
+
+  if (!options.userId) {
+    const resolved = await resolveAnonVisitor(options.request, { create: true });
+    if (!resolved.visitor) return { error: "Could not identify this visitor.", status: 400 };
+    return {
+      identity: { sender_id: null, recipient_id: options.adminId, anon_visitor_id: resolved.visitor.id },
+      issuedToken: resolved.issuedToken,
+    };
+  }
+
+  const target = UUID_RE.test(options.recipientId) ? options.recipientId : options.adminId;
+  if (target === options.userId) return { error: "You cannot message yourself.", status: 400 };
+
+  const { data: anonTarget } = await supabase.from("anon_visitors").select("id").eq("id", target).maybeSingle();
+  if (anonTarget) {
+    if (!options.admin) return { error: "Choose someone to message.", status: 403 };
+    return { identity: { sender_id: options.userId, recipient_id: null, anon_visitor_id: target } };
+  }
+
+  const { data: profile } = await supabase.from("profiles").select("id").eq("id", target).maybeSingle();
+  if (!profile) return { error: "That person no longer exists.", status: 404 };
+  return { identity: { sender_id: options.userId, recipient_id: target, anon_visitor_id: null } };
 }

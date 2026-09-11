@@ -7,6 +7,7 @@ import {
   attachReplyPreviews,
   buildThreads,
   participantLabels,
+  resolveRowIdentity,
   signAttachments,
   viewerIsParticipant,
   viewerIsSender,
@@ -14,8 +15,6 @@ import {
   type Viewer,
 } from "@/lib/dm-server";
 import { resolveAnonVisitor, setVisitorCookie } from "@/lib/visitor-server";
-
-const UUID = /^[0-9a-f-]{36}$/i;
 
 async function ownerSummary() {
   const { data } = await createServerSupabaseClient()
@@ -156,34 +155,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Admin account is not configured. Mark one profile as super admin first." }, { status: 503 });
     }
 
-    // Work out who the row belongs to before touching storage.
-    let rowIdentity: Pick<DirectMessageRow, "sender_id" | "recipient_id" | "anon_visitor_id">;
-    let issuedToken: string | null = null;
-
-    if (!user) {
-      // Anonymous visitor writing to the owner.
-      const resolved = await resolveAnonVisitor(request, { create: true });
-      if (!resolved.visitor) return NextResponse.json({ error: "Could not identify this visitor." }, { status: 400 });
-      issuedToken = resolved.issuedToken;
-      rowIdentity = { sender_id: null, recipient_id: adminId, anon_visitor_id: resolved.visitor.id };
-    } else {
-      // Any signed-in account may message any other account. With no explicit
-      // recipient the message goes to the owner, which keeps "Message Sandeep"
-      // working for first-time visitors.
-      const target = UUID.test(recipientId) ? recipientId : adminId;
-      if (target === user.id) return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
-
-      // Only the owner may write into an anonymous visitor's thread.
-      const { data: anonTarget } = await supabase.from("anon_visitors").select("id").eq("id", target).maybeSingle();
-      if (anonTarget) {
-        if (!admin) return NextResponse.json({ error: "Choose someone to message." }, { status: 403 });
-        rowIdentity = { sender_id: user.id, recipient_id: null, anon_visitor_id: target };
-      } else {
-        const { data: profile } = await supabase.from("profiles").select("id").eq("id", target).maybeSingle();
-        if (!profile) return NextResponse.json({ error: "That person no longer exists." }, { status: 404 });
-        rowIdentity = { sender_id: user.id, recipient_id: target, anon_visitor_id: null };
-      }
+    // Same rules for messages and call events.
+    const resolved = await resolveRowIdentity({
+      request,
+      userId: user?.id || null,
+      admin,
+      adminId,
+      recipientId,
+    });
+    if (!resolved.identity) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status || 400 });
     }
+    const rowIdentity = resolved.identity;
+    const issuedToken = resolved.issuedToken || null;
 
     // A reply may only quote a message from the same conversation.
     if (replyToId !== null) {

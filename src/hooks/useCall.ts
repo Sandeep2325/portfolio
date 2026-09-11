@@ -22,7 +22,9 @@ type OutgoingSignal = Without<Signal, "from">;
 /** Give up on an unanswered call rather than ringing forever. */
 const RING_TIMEOUT_MS = 45_000;
 
-export function useCall(selfId: string, peerId: string) {
+export type CallOutcome = { kind: "voice" | "video"; status: "completed" | "missed" | "declined"; durationSeconds: number };
+
+export function useCall(selfId: string, peerId: string, onOutcome?: (outcome: CallOutcome) => void) {
   const [state, setState] = useState<CallState>("idle");
   const [isVideo, setIsVideo] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -40,10 +42,38 @@ export function useCall(selfId: string, peerId: string) {
   const incomingOffer = useRef<{ sdp: RTCSessionDescriptionInit; video: boolean } | null>(null);
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateRef = useRef<CallState>("idle");
+  // Only the side that placed the call writes the history row, so one call
+  // produces exactly one entry.
+  const isCallerRef = useRef(false);
+  const wasActiveRef = useRef(false);
+  const videoRef = useRef(false);
+  const secondsRef = useRef(0);
+  const loggedRef = useRef(false);
+  const outcomeRef = useRef(onOutcome);
 
   useEffect(() => {
     stateRef.current = state;
+    if (state === "active") wasActiveRef.current = true;
   }, [state]);
+
+  useEffect(() => {
+    outcomeRef.current = onOutcome;
+  }, [onOutcome]);
+
+  useEffect(() => {
+    secondsRef.current = seconds;
+  }, [seconds]);
+
+  /** Writes the history row once per call, from the caller only. */
+  const logOutcome = useCallback((status: "completed" | "missed" | "declined") => {
+    if (!isCallerRef.current || loggedRef.current) return;
+    loggedRef.current = true;
+    outcomeRef.current?.({
+      kind: videoRef.current ? "video" : "voice",
+      status: wasActiveRef.current ? "completed" : status,
+      durationSeconds: secondsRef.current,
+    });
+  }, []);
 
   const send = useCallback((signal: OutgoingSignal) => {
     void channelRef.current?.send({ type: "broadcast", event: "call", payload: { ...signal, from: selfId } });
@@ -69,6 +99,7 @@ export function useCall(selfId: string, peerId: string) {
 
   const finish = useCallback(
     (reason: string, notifyPeer: boolean) => {
+      logOutcome(reason === "declined" ? "declined" : "missed");
       if (notifyPeer && stateRef.current !== "idle") {
         send({ type: "end", reason: reason === "declined" ? "declined" : "hangup" });
       }
@@ -77,7 +108,7 @@ export function useCall(selfId: string, peerId: string) {
       setState("ended");
       setTimeout(() => setState((current) => (current === "ended" ? "idle" : current)), 2200);
     },
-    [cleanup, send],
+    [cleanup, send, logOutcome],
   );
 
   /** Builds the peer connection and wires media + ICE through the channel. */
@@ -125,6 +156,11 @@ export function useCall(selfId: string, peerId: string) {
       setError("");
       setEndedReason("");
       setIsVideo(video);
+      isCallerRef.current = true;
+      wasActiveRef.current = false;
+      videoRef.current = video;
+      loggedRef.current = false;
+      secondsRef.current = 0;
       setState("calling");
 
       try {
@@ -204,6 +240,10 @@ export function useCall(selfId: string, peerId: string) {
             return;
           }
           incomingOffer.current = { sdp: signal.sdp, video: signal.video };
+          // We are the callee; the caller owns the history row.
+          isCallerRef.current = false;
+          loggedRef.current = false;
+          wasActiveRef.current = false;
           setIsVideo(signal.video);
           setState("ringing");
           return;
@@ -230,6 +270,7 @@ export function useCall(selfId: string, peerId: string) {
         if (signal.type === "end") {
           const label =
             signal.reason === "declined" ? "Call declined" : signal.reason === "busy" ? "Peer is busy" : "Call ended";
+          logOutcome(signal.reason === "declined" ? "declined" : "missed");
           cleanup();
           setEndedReason(label);
           setState("ended");
@@ -246,7 +287,7 @@ export function useCall(selfId: string, peerId: string) {
       channelRef.current = null;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [selfId, peerId, cleanup]);
+  }, [selfId, peerId, cleanup, logOutcome]);
 
   // Call duration.
   useEffect(() => {

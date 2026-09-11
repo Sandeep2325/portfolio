@@ -12,6 +12,8 @@ import {
   HiOutlineTrash,
   HiOutlineArrowUturnLeft,
   HiOutlineXMark,
+  HiOutlinePhone,
+  HiOutlineVideoCamera,
 } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
@@ -29,6 +31,8 @@ import {
 } from "@/lib/attachments";
 import MessageAttachment, { type MessageAttachmentData } from "./MessageAttachment";
 import NotificationSetting from "./NotificationSetting";
+import CallPanel from "./CallPanel";
+import { useCall } from "@/hooks/useCall";
 
 const PRESENCE_POLL_MS = 60_000;
 /** Signed URLs last an hour; refresh a little before that. */
@@ -149,6 +153,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const peerLabel = admin ? selectedContact?.label || "guest" : owner?.label || "Sandeep Gowda";
 
   const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
+  const call = useCall(userId, peerId);
 
   /**
    * Which side of the thread a message sits on. Anonymous threads cannot use
@@ -739,6 +744,28 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         </div>
 
         <div className="dm-header-actions">
+          {call.supported && peerId && call.state === "idle" && (
+            <>
+              <button
+                type="button"
+                className="dm-call-btn"
+                title={`Voice call ${peerLabel}`}
+                aria-label={`Voice call ${peerLabel}`}
+                onClick={() => void call.startCall(false)}
+              >
+                <HiOutlinePhone className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className="dm-call-btn"
+                title={`Video call ${peerLabel}`}
+                aria-label={`Video call ${peerLabel}`}
+                onClick={() => void call.startCall(true)}
+              >
+                <HiOutlineVideoCamera className="h-4 w-4" />
+              </button>
+            </>
+          )}
           {anonymous && (
             <a href="/login" className="dm-chip" title={`Messaging anonymously${visitorLabel ? ` as ${visitorLabel}` : ""}. Sign in to keep your history.`}>
               <HiOutlineEyeSlash className="h-3.5 w-3.5" />
@@ -1002,6 +1029,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
       </form>
 
       {error && <p className="feed-error">{error}</p>}
+
+      <CallPanel call={call} peerLabel={peerLabel} />
     </section>
   );
 }

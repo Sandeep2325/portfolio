@@ -1549,6 +1549,173 @@ body {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* Call buttons in the panel header */
+.dm-call-btn {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 9999px;
+  color: hsl(142 71% 60%);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dm-call-btn:hover {
+  border-color: hsl(142 71% 45% / 0.5);
+  background: hsl(142 71% 45% / 0.15);
+}
+
+/* Call overlay */
+.call-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 0.75rem;
+  background: hsl(220 20% 6% / 0.82);
+  backdrop-filter: blur(10px);
+  border-radius: 0.75rem;
+}
+
+.call-panel {
+  display: grid;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 420px;
+  justify-items: center;
+}
+
+.call-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 8rem;
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  background: hsl(220 20% 10%);
+}
+
+.call-remote {
+  width: 100%;
+  max-height: 42vh;
+  object-fit: cover;
+  background: #000;
+}
+
+.call-local {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  width: 28%;
+  max-width: 110px;
+  border: 1px solid hsl(220 15% 40% / 0.6);
+  border-radius: 0.4rem;
+  object-fit: cover;
+  background: #000;
+}
+
+/* A voice call still needs the element to play the remote audio track. */
+.sr-only-audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.call-avatar-wrap {
+  display: grid;
+  place-items: center;
+  padding: 1.75rem 0;
+}
+
+.call-avatar {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, hsl(207 100% 65% / 0.35), hsl(270 100% 67% / 0.35));
+  color: #fff;
+  font-size: 1.9rem;
+  font-weight: 700;
+}
+
+.call-avatar.pulsing {
+  animation: pulseGlow 1.6s ease-in-out infinite;
+}
+
+.call-meta {
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+  text-align: center;
+}
+
+.call-meta strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.call-meta span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-error {
+  color: #f87171;
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
+.call-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.call-btn {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 9999px;
+  color: #fff;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.call-btn:hover {
+  filter: brightness(1.15);
+}
+
+.call-btn:active {
+  transform: scale(0.94);
+}
+
+.call-btn.accept {
+  background: #22c55e;
+}
+
+.call-btn.decline {
+  background: #ef4444;
+}
+
+.call-btn.toggle {
+  border: 1px solid var(--surface-border);
+  background: hsl(220 15% 24% / 0.9);
+  color: var(--text);
+}
+
+.call-btn.toggle.on {
+  background: hsl(0 84% 60% / 0.25);
+  border-color: hsl(0 84% 60% / 0.5);
+  color: #fca5a5;
+}
+
 /* Per-message delete menu */
 .dm {
   position: relative;

@@ -30,7 +30,9 @@ export function useConversationChannel(userId: string, peerId: string, token: st
     setPeerOnline(false);
     setPeerTyping(false);
 
-    if (!browserSupabase || !userId || !peerId || !token) return;
+    // No token requirement: broadcast and presence work for anonymous
+    // visitors too, they just cannot use postgres_changes.
+    if (!browserSupabase || !userId || !peerId) return;
     const supabase = browserSupabase;
     const name = `dm-${[userId, peerId].sort().join("-")}`;
 

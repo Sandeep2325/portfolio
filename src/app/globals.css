@@ -1567,6 +1567,150 @@ body {
   text-align: center;
 }
 
+/* Connection requests and state */
+.convo-requests {
+  border-bottom: 1px solid var(--surface-border);
+  background: hsl(207 100% 65% / 0.08);
+  padding: 0.5rem 0.6rem 0.6rem;
+}
+
+.convo-requests-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+  color: hsl(207 100% 76%);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.convo-requests-head span {
+  display: grid;
+  place-items: center;
+  min-width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.6rem;
+}
+
+.convo-request {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+}
+
+.convo-request .convo-avatar {
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 0.68rem;
+}
+
+.convo-request strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.convo-accept,
+.convo-decline {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 9999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.convo-accept {
+  background: hsl(142 71% 45% / 0.25);
+  color: #86efac;
+}
+
+.convo-accept:hover {
+  background: hsl(142 71% 45% / 0.4);
+}
+
+.convo-decline {
+  color: var(--muted);
+  padding: 0.2rem 0.3rem;
+}
+
+.convo-decline:hover {
+  color: #f87171;
+}
+
+.convo-state {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 9999px;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.convo-state.connected {
+  color: #86efac;
+}
+
+.convo-state.pending {
+  color: var(--muted);
+}
+
+.convo-state.action {
+  border: 1px solid hsl(207 100% 65% / 0.4);
+  background: hsl(207 100% 65% / 0.14);
+  color: hsl(207 100% 76%);
+  cursor: pointer;
+}
+
+.convo-state.action:hover {
+  background: hsl(207 100% 65% / 0.26);
+}
+
+/* Composer replaced by the connect prompt */
+.dm-connect-gate {
+  display: grid;
+  flex-shrink: 0;
+  justify-items: center;
+  gap: 0.3rem;
+  border: 1px dashed hsl(207 100% 65% / 0.4);
+  border-radius: 0.6rem;
+  background: hsl(207 100% 65% / 0.07);
+  padding: 0.9rem 0.8rem;
+  text-align: center;
+}
+
+.dm-connect-gate strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.dm-connect-gate span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.dm-connect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
 /* Two-pane messenger: conversation list beside the thread */
 .messages-panel.has-sidebar {
   display: grid;

@@ -7,11 +7,13 @@ import { isConversationOnScreen } from "@/lib/dm-focus";
 import type { AttachmentKind } from "@/lib/attachments";
 
 export type UnreadItem = {
-  id: number;
+  id: number | string;
   senderId: string;
   senderLabel: string;
   preview: string;
   createdAt: string;
+  /** Connection requests are announced alongside messages. */
+  kind?: "message" | "connection";
 };
 
 export type NotificationPermissionState = "unsupported" | "default" | "granted" | "denied";
@@ -45,6 +47,7 @@ function preview(body: string, kind: AttachmentKind | null) {
  */
 export function useDirectMessageNotifications() {
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingRequests, setPendingRequests] = useState(0);
   const [toast, setToast] = useState<UnreadItem | null>(null);
   const [permission, setPermission] = useState<NotificationPermissionState>("unsupported");
 
@@ -77,10 +80,71 @@ export function useDirectMessageNotifications() {
     }
   }, []);
 
+  const knownRequests = useRef<Set<string>>(new Set());
+  const requestsPrimed = useRef(false);
+
+  /** Pending connection requests: badge count plus a one-off announcement. */
+  const refreshRequests = useCallback(async () => {
+    if (!browserSupabase) return;
+    const { data } = await browserSupabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      setPendingRequests(0);
+      return;
+    }
+    try {
+      const response = await fetch("/api/connections", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as {
+        incoming: { id: string; peerId: string; peerLabel: string; createdAt: string }[];
+      };
+      const incoming = payload.incoming || [];
+      setPendingRequests(incoming.length);
+
+      const arrivals = incoming.filter((row) => !knownRequests.current.has(row.id));
+      knownRequests.current = new Set(incoming.map((row) => row.id));
+
+      // The first pass is a baseline, so an existing backlog stays quiet.
+      if (!requestsPrimed.current) {
+        requestsPrimed.current = true;
+        return;
+      }
+      const latest = arrivals[arrivals.length - 1];
+      if (!latest) return;
+
+      const item: UnreadItem = {
+        id: `conn-${latest.id}`,
+        senderId: latest.peerId,
+        senderLabel: latest.peerLabel,
+        preview: "wants to connect with you",
+        createdAt: latest.createdAt,
+        kind: "connection",
+      };
+
+      if (currentPermission() === "granted" && (document.visibilityState !== "visible" || !document.hasFocus())) {
+        try {
+          new Notification(`${item.senderLabel} wants to connect`, { body: "Open Messages to respond.", tag: item.id as string });
+          return;
+        } catch {
+          // Fall through to the in-app toast.
+        }
+      }
+      setToast(item);
+    } catch {
+      // Next event retries.
+    }
+  }, []);
+
   const scheduleRefresh = useCallback(() => {
     if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => void refreshUnread(), REFRESH_DEBOUNCE_MS);
-  }, [refreshUnread]);
+    debounce.current = setTimeout(() => {
+      void refreshUnread();
+      void refreshRequests();
+    }, REFRESH_DEBOUNCE_MS);
+  }, [refreshUnread, refreshRequests]);
 
   const labelFor = useCallback(async (senderId: string, token: string) => {
     const cached = labelCache.current.get(senderId);
@@ -154,6 +218,7 @@ export function useDirectMessageNotifications() {
 
   useEffect(() => {
     void refreshUnread();
+    void refreshRequests();
     if (!browserSupabase) return;
     const supabase = browserSupabase;
     let channel: ReturnType<typeof supabase.channel> | undefined;
@@ -186,6 +251,7 @@ export function useDirectMessageNotifications() {
           void announce(row, token);
         })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages" }, scheduleRefresh)
+        .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, scheduleRefresh)
         .subscribe((status) => {
           // A dropped socket would otherwise leave the badge frozen.
           if (status === "SUBSCRIBED" || isDeadChannelStatus(status)) scheduleRefresh();
@@ -207,7 +273,7 @@ export function useDirectMessageNotifications() {
       auth.subscription.unsubscribe();
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [refreshUnread, scheduleRefresh, announce]);
+  }, [refreshUnread, refreshRequests, scheduleRefresh, announce]);
 
   const requestPermission = useCallback(async () => {
     if (typeof Notification === "undefined") return "unsupported" as const;
@@ -217,11 +283,15 @@ export function useDirectMessageNotifications() {
   }, []);
 
   return {
-    unreadCount,
+    // The dock badge covers unread messages and pending requests together.
+    unreadCount: unreadCount + pendingRequests,
+    messageCount: unreadCount,
+    pendingRequests,
     toast,
     dismissToast: () => setToast(null),
     permission,
     requestPermission,
     refresh: refreshUnread,
+    refreshRequests,
   };
 }

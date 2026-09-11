@@ -3,6 +3,7 @@ import { getAdminUserId, getAuthenticatedUser, isSuperAdmin } from "@/lib/auth-s
 import { createServerSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { resolveRowIdentity, signAttachments, type DirectMessageRow } from "@/lib/dm-server";
 import { setVisitorCookie } from "@/lib/visitor-server";
+import { canMessage } from "@/lib/connections-server";
 
 const KINDS = new Set(["voice", "video"]);
 const STATUSES = new Set(["completed", "missed", "declined"]);
@@ -46,6 +47,15 @@ export async function POST(request: Request) {
     if (!resolved.identity) {
       return NextResponse.json({ error: resolved.error }, { status: resolved.status || 400 });
     }
+    const rowIdentity = resolved.identity;
+
+    // Two ordinary accounts must be connected first; the owner is exempt.
+    if (rowIdentity.sender_id && rowIdentity.recipient_id) {
+      const permission = await canMessage(rowIdentity.sender_id, rowIdentity.recipient_id);
+      if (!permission.ok) {
+        return NextResponse.json({ error: permission.error, reason: permission.reason }, { status: 403 });
+      }
+    }
 
     const duration =
       callStatus === "completed" && Number.isFinite(durationSeconds) ? Math.max(0, Math.round(durationSeconds as number)) : null;
@@ -55,7 +65,7 @@ export async function POST(request: Request) {
       // Body stays blank: call_* carries the content, and the length check on
       // body still needs a non-empty value.
       .insert({
-        ...resolved.identity,
+        ...rowIdentity,
         body: " ",
         call_kind: callKind,
         call_status: callStatus,

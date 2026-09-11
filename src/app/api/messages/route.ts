@@ -15,6 +15,7 @@ import {
   type Viewer,
 } from "@/lib/dm-server";
 import { resolveAnonVisitor, setVisitorCookie } from "@/lib/visitor-server";
+import { canMessage } from "@/lib/connections-server";
 
 async function ownerSummary() {
   const { data } = await createServerSupabaseClient()
@@ -168,6 +169,14 @@ export async function POST(request: Request) {
     }
     const rowIdentity = resolved.identity;
     const issuedToken = resolved.issuedToken || null;
+
+    // Two ordinary accounts must be connected first; the owner is exempt.
+    if (rowIdentity.sender_id && rowIdentity.recipient_id) {
+      const permission = await canMessage(rowIdentity.sender_id, rowIdentity.recipient_id);
+      if (!permission.ok) {
+        return NextResponse.json({ error: permission.error, reason: permission.reason }, { status: 403 });
+      }
+    }
 
     // A reply may only quote a message from the same conversation.
     if (replyToId !== null) {

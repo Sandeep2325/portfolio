@@ -38,6 +38,7 @@ import MessageAttachment, { type MessageAttachmentData } from "./MessageAttachme
 import NotificationSetting from "./NotificationSetting";
 import CallPanel from "./CallPanel";
 import ConversationList, { type Person, type ThreadSummary } from "./ConversationList";
+import { useConnections } from "@/hooks/useConnections";
 import { useCall, type CallOutcome } from "@/hooks/useCall";
 
 const PRESENCE_POLL_MS = 60_000;
@@ -178,6 +179,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const retryPayloads = useRef(new Map<number, RetryPayload>());
 
   const recorder = useAudioRecorder();
+  const connections = useConnections(!anonymous && Boolean(token));
 
   /**
    * Which side of the thread a message sits on. Anonymous threads cannot use
@@ -887,6 +889,15 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
   const blocked = !canWrite;
   const spectating = Boolean(!anonymous && activeThread && !activeThread.participant);
+
+  /*
+   * The owner is reachable by anyone and can reach anyone, so the gate only
+   * applies between two ordinary accounts.
+   */
+  const peerIsOwner = Boolean(peerId && peerId === owner?.id);
+  const peerState = peerId && !anonymous && !admin && !peerIsOwner ? connections.stateFor(peerId) : "connected";
+  const needsConnection = peerState !== "connected";
+  const pendingConnection = peerId ? connections.connectionFor(peerId) : null;
   const active = peerOnline || isRecentlyActive(peerLastSeen);
   const lastSeenLabel = relativeTime(peerLastSeen);
   const recording = recorder.state === "recording" || recorder.state === "requesting";
@@ -919,6 +930,11 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
             setMobilePane("thread");
           }}
           onlineIds={new Set(peerOnline && peerId ? [peerId] : [])}
+          incoming={connections.incoming}
+          busyId={connections.busyId}
+          stateFor={connections.stateFor}
+          onRespond={(id, action) => void connections.respond(id, action)}
+          onRequest={(id) => void connections.request(id)}
         />
       )}
 
@@ -935,9 +951,9 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
           </button>
         )}
         <div className="dm-header-main">
-          <h2>{admin ? "Admin inbox" : "Message Sandeep"}</h2>
+          <h2>{activeThread || draftPeer || anonymous ? (admin ? "Admin inbox" : peerLabel) : "Messages"}</h2>
           {blocked ? (
-            <p>Select a guest email to view that conversation or start a new one.</p>
+            <p>Pick a chat on the left, or tap ✎ to start a new one.</p>
           ) : (
             <p className="dm-presence">
               <span className={active ? "dm-dot online" : "dm-dot"} />
@@ -957,7 +973,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         </div>
 
         <div className="dm-header-actions">
-          {call.supported && peerId && call.state === "idle" && (
+          {call.supported && peerId && !needsConnection && !spectating && call.state === "idle" && (
             <>
               <button
                 type="button"
@@ -1025,7 +1041,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
       <div className="dm-list">
         {blocked ? (
-          <p className="dm-empty">Select a guest email to view or start a private conversation.</p>
+          <p className="dm-empty">No conversation selected.</p>
         ) : visibleMessages.length === 0 ? (
           <p className="dm-empty">
             {admin ? `No messages with ${peerLabel} yet. Send the first message below.` : "No messages yet. Say hello below."}
@@ -1196,6 +1212,57 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         <p className="dm-readonly">
           You are viewing this conversation as the owner. Replying is disabled because you are not a participant.
         </p>
+      ) : peerId && needsConnection ? (
+        <div className="dm-connect-gate">
+          <strong>
+            {peerState === "awaiting-them"
+              ? `Waiting for ${peerLabel} to accept`
+              : peerState === "awaiting-you"
+                ? `${peerLabel} wants to connect`
+                : `Connect with ${peerLabel} to start messaging`}
+          </strong>
+          <span>You can only message people you are connected with.</span>
+          <div className="dm-connect-actions">
+            {peerState === "awaiting-you" && pendingConnection ? (
+              <>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={connections.busyId === pendingConnection.id}
+                  onClick={() => void connections.respond(pendingConnection.id, "accept")}
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={connections.busyId === pendingConnection.id}
+                  onClick={() => void connections.respond(pendingConnection.id, "decline")}
+                >
+                  Decline
+                </button>
+              </>
+            ) : peerState === "awaiting-them" && pendingConnection ? (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={connections.busyId === pendingConnection.id}
+                onClick={() => void connections.remove(pendingConnection.id)}
+              >
+                Withdraw request
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary-button"
+                disabled={connections.busyId === peerId}
+                onClick={() => void connections.request(peerId)}
+              >
+                {peerState === "declined" ? "Ask again" : "Send connection request"}
+              </button>
+            )}
+          </div>
+        </div>
       ) : (
       <form className="dm-form" onSubmit={send}>
         <textarea

@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import {
+  HiOutlineCheck,
+  HiOutlineUserPlus,
+  HiOutlineClock,
   HiOutlineMagnifyingGlass,
   HiOutlinePencilSquare,
   HiOutlineEyeSlash,
@@ -25,6 +28,10 @@ export type ThreadSummary = {
 
 export type Person = { id: string; label: string; isOwner: boolean; lastSeenAt: string | null };
 
+export type PeerState = "none" | "connected" | "awaiting-them" | "awaiting-you" | "declined";
+
+export type IncomingRequest = { id: string; peerId: string; peerLabel: string };
+
 interface ConversationListProps {
   threads: ThreadSummary[];
   people: Person[];
@@ -32,6 +39,11 @@ interface ConversationListProps {
   onSelect: (thread: ThreadSummary) => void;
   onStartWith: (person: Person) => void;
   onlineIds: Set<string>;
+  incoming: IncomingRequest[];
+  busyId: string | null;
+  stateFor: (peerId: string) => PeerState;
+  onRespond: (id: string, action: "accept" | "decline") => void;
+  onRequest: (peerId: string) => void;
 }
 
 export default function ConversationList({
@@ -41,6 +53,11 @@ export default function ConversationList({
   onSelect,
   onStartWith,
   onlineIds,
+  incoming,
+  busyId,
+  stateFor,
+  onRespond,
+  onRequest,
 }: ConversationListProps) {
   const [query, setQuery] = useState("");
   const [composing, setComposing] = useState(false);
@@ -84,6 +101,36 @@ export default function ConversationList({
       </div>
 
       <div className="convo-scroll">
+        {!composing && incoming.length > 0 && (
+          <div className="convo-requests">
+            <p className="convo-requests-head">
+              Connection requests <span>{incoming.length}</span>
+            </p>
+            {incoming.map((request) => (
+              <div className="convo-request" key={request.id}>
+                <span className="convo-avatar">{request.peerLabel.slice(0, 1).toUpperCase()}</span>
+                <strong>{request.peerLabel}</strong>
+                <button
+                  type="button"
+                  className="convo-accept"
+                  disabled={busyId === request.id}
+                  onClick={() => onRespond(request.id, "accept")}
+                >
+                  <HiOutlineCheck className="h-3.5 w-3.5" />
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  className="convo-decline"
+                  disabled={busyId === request.id}
+                  onClick={() => onRespond(request.id, "decline")}
+                >
+                  <HiOutlineXMark className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {composing ? (
           shownPeople.length === 0 ? (
             <p className="convo-empty">No one to message yet.</p>
@@ -108,9 +155,15 @@ export default function ConversationList({
                     <strong>{person.label}</strong>
                   </span>
                   <span className="convo-preview">
-                    {person.lastSeenAt ? `Active ${relativeTime(person.lastSeenAt)}` : "New conversation"}
+                    {person.isOwner
+                      ? "Always reachable"
+                      : person.lastSeenAt
+                        ? `Active ${relativeTime(person.lastSeenAt)}`
+                        : "New conversation"}
                   </span>
                 </span>
+
+                {!person.isOwner && <ConnectAction state={stateFor(person.id)} busy={busyId === person.id} onRequest={() => onRequest(person.id)} />}
               </button>
             ))
           )
@@ -151,5 +204,48 @@ export default function ConversationList({
         )}
       </div>
     </aside>
+  );
+}
+
+/** Connection state badge, and the button to request one. */
+function ConnectAction({ state, busy, onRequest }: { state: PeerState; busy: boolean; onRequest: () => void }) {
+  if (state === "connected") {
+    return (
+      <span className="convo-state connected">
+        <HiOutlineCheck className="h-3.5 w-3.5" />
+        Connected
+      </span>
+    );
+  }
+  if (state === "awaiting-them") {
+    return (
+      <span className="convo-state pending">
+        <HiOutlineClock className="h-3.5 w-3.5" />
+        Requested
+      </span>
+    );
+  }
+  if (state === "awaiting-you") return <span className="convo-state pending">Respond above</span>;
+
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className="convo-state action"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!busy) onRequest();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.stopPropagation();
+          event.preventDefault();
+          if (!busy) onRequest();
+        }
+      }}
+    >
+      <HiOutlineUserPlus className="h-3.5 w-3.5" />
+      {busy ? "…" : state === "declined" ? "Ask again" : "Connect"}
+    </span>
   );
 }

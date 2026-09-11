@@ -1549,6 +1549,295 @@ body {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
+.dm-sender {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: hsl(207 100% 74%);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.dm-readonly {
+  flex-shrink: 0;
+  border: 1px dashed var(--surface-border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* Two-pane messenger: conversation list beside the thread */
+.messages-panel.has-sidebar {
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) 1fr;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.messages-panel.has-sidebar .dm-thread {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 1.25rem 1.25rem 1.1rem;
+}
+
+.messages-panel.has-sidebar .dm-header {
+  margin: 0 -1.25rem 0.25rem;
+  padding: 0 1.25rem 0.75rem;
+}
+
+.convo-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--surface-border);
+  background: hsl(220 20% 12% / 0.55);
+}
+
+.convo-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--surface-border);
+  padding: 0.6rem 0.7rem;
+}
+
+.surface .convo-search input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.15rem 0;
+  font-size: 0.82rem;
+}
+
+.surface .convo-search input:focus {
+  box-shadow: none;
+  border: none;
+  outline: none;
+}
+
+.convo-search > button {
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 0.25rem;
+  color: var(--muted);
+}
+
+.convo-search > button:hover {
+  background: hsl(220 15% 30% / 0.6);
+  color: var(--text);
+}
+
+.convo-new.active {
+  background: hsl(207 100% 65% / 0.2);
+  color: hsl(207 100% 75%);
+}
+
+.convo-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.convo-empty {
+  padding: 1rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.convo-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.55rem;
+  border-bottom: 1px solid hsl(220 15% 30% / 0.25);
+  padding: 0.6rem 0.7rem;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.convo-row:hover {
+  background: hsl(220 15% 26% / 0.45);
+}
+
+.convo-row.active {
+  background: hsl(207 100% 65% / 0.14);
+  box-shadow: inset 3px 0 0 hsl(207 100% 65%);
+}
+
+.convo-row.spectate .convo-preview em {
+  color: hsl(270 100% 78%);
+  font-style: normal;
+}
+
+.convo-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, hsl(207 100% 65% / 0.3), hsl(270 100% 67% / 0.3));
+  color: hsl(207 100% 80%);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.convo-avatar.anon {
+  background: hsl(270 100% 67% / 0.2);
+  color: hsl(270 100% 82%);
+}
+
+.convo-online {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 0.6rem;
+  height: 0.6rem;
+  border: 2px solid var(--os-window);
+  border-radius: 9999px;
+  background: #4ade80;
+}
+
+.convo-body {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.1rem;
+}
+
+.convo-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.convo-top strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.convo-top time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.convo-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.convo-preview {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.convo-unread {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.28rem;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.dm-thread-menu {
+  position: relative;
+}
+
+.dm-thread-btn {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 9999px;
+  color: var(--muted);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dm-thread-btn:hover {
+  border-color: hsl(207 100% 65% / 0.4);
+  background: hsl(207 100% 65% / 0.12);
+}
+
+/* The back button only exists on the narrow, one-pane layout. */
+.dm-back {
+  display: none;
+  flex-shrink: 0;
+  margin-right: 0.2rem;
+  border-radius: 9999px;
+  padding: 0.2rem;
+  color: var(--muted);
+}
+
+.dm-back:hover {
+  color: var(--text);
+}
+
+/*
+ * Narrow windows show one pane at a time, the way a phone messenger does.
+ * Splitting the height between a list and a thread left neither usable.
+ */
+@media (max-width: 640px) {
+  .messages-panel.has-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .convo-list {
+    border-right: none;
+  }
+
+  .messages-panel.has-sidebar.pane-list .dm-thread {
+    display: none;
+  }
+
+  .messages-panel.has-sidebar.pane-thread .convo-list {
+    display: none;
+  }
+
+  .dm-back {
+    display: grid;
+    place-items: center;
+  }
+
+  .messages-panel.has-sidebar .dm-thread {
+    padding: 0.85rem 1rem 0.9rem;
+  }
+
+  .messages-panel.has-sidebar .dm-header {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
 /* Call buttons in the panel header */
 .dm-call-btn {
   display: grid;

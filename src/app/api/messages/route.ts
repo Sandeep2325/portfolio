@@ -5,12 +5,11 @@ import { DM_ATTACHMENT_BUCKET, MAX_ATTACHMENT_SIZE, extensionOf, resolveKind, ty
 import {
   applyDeletions,
   attachReplyPreviews,
-  resolveAnonContacts,
-  resolveContacts,
+  buildThreads,
+  participantLabels,
   signAttachments,
   viewerIsParticipant,
   viewerIsSender,
-  type Contact,
   type DirectMessageRow,
   type Viewer,
 } from "@/lib/dm-server";
@@ -82,10 +81,8 @@ export async function GET(request: Request) {
     const admin = await isSuperAdmin(user.id);
 
     let query = supabase.from("direct_messages").select("*");
-    query = admin
-      // The owner also sees every anonymous thread.
-      ? query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id},anon_visitor_id.not.is.null`)
-      : query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
+    // The owner oversees the whole site, so they see every conversation.
+    if (!admin) query = query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
     if (since) query = query.or(`created_at.gt.${since},read_at.gt.${since},deleted_for_everyone_at.gt.${since}`);
 
     const { data, error } = await query.order("created_at", { ascending: true }).limit(500);
@@ -103,29 +100,15 @@ export async function GET(request: Request) {
       });
     }
 
-    let contacts: Contact[] = [];
-    let owner: Awaited<ReturnType<typeof ownerSummary>> = null;
-
-    if (admin) {
-      const { data: guests } = await supabase.from("profiles").select("id").eq("is_super_admin", false);
-      const guestIds = (guests || []).map((guest) => guest.id);
-      const peerIdsFromMessages = rows
-        .flatMap((message) => [message.sender_id, message.recipient_id])
-        .filter((id): id is string => Boolean(id) && id !== user.id);
-      const peerIds = Array.from(new Set([...guestIds, ...peerIdsFromMessages]));
-
-      const [accounts, anons] = await Promise.all([resolveContacts(peerIds), resolveAnonContacts()]);
-      contacts = [...accounts, ...anons].sort((left, right) => left.label.localeCompare(right.label));
-    } else {
-      owner = await ownerSummary();
-    }
+    const { labels, ips } = await participantLabels(rows);
 
     return NextResponse.json({
       messages: await signAttachments(await attachReplyPreviews(rows, viewer)),
       admin,
       userId: user.id,
-      contacts,
-      owner,
+      threads: buildThreads(rows, viewer, labels, ips),
+      labels: Object.fromEntries(labels),
+      owner: await ownerSummary(),
       syncedAt: new Date().toISOString(),
     });
   } catch (caught) {
@@ -183,27 +166,23 @@ export async function POST(request: Request) {
       if (!resolved.visitor) return NextResponse.json({ error: "Could not identify this visitor." }, { status: 400 });
       issuedToken = resolved.issuedToken;
       rowIdentity = { sender_id: null, recipient_id: adminId, anon_visitor_id: resolved.visitor.id };
-    } else if (admin) {
-      if (!UUID.test(recipientId)) return NextResponse.json({ error: "Choose a recipient." }, { status: 400 });
-
-      // The id is either an anonymous visitor or a guest account.
-      const { data: anonTarget } = await supabase.from("anon_visitors").select("id").eq("id", recipientId).maybeSingle();
-      if (anonTarget) {
-        rowIdentity = { sender_id: user.id, recipient_id: null, anon_visitor_id: recipientId };
-      } else {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, is_super_admin")
-          .eq("id", recipientId)
-          .maybeSingle();
-        if (!profile || profile.is_super_admin) {
-          return NextResponse.json({ error: "Choose a guest account to message." }, { status: 400 });
-        }
-        rowIdentity = { sender_id: user.id, recipient_id: recipientId, anon_visitor_id: null };
-      }
     } else {
-      if (user.id === adminId) return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
-      rowIdentity = { sender_id: user.id, recipient_id: adminId, anon_visitor_id: null };
+      // Any signed-in account may message any other account. With no explicit
+      // recipient the message goes to the owner, which keeps "Message Sandeep"
+      // working for first-time visitors.
+      const target = UUID.test(recipientId) ? recipientId : adminId;
+      if (target === user.id) return NextResponse.json({ error: "You cannot message yourself." }, { status: 400 });
+
+      // Only the owner may write into an anonymous visitor's thread.
+      const { data: anonTarget } = await supabase.from("anon_visitors").select("id").eq("id", target).maybeSingle();
+      if (anonTarget) {
+        if (!admin) return NextResponse.json({ error: "Choose someone to message." }, { status: 403 });
+        rowIdentity = { sender_id: user.id, recipient_id: null, anon_visitor_id: target };
+      } else {
+        const { data: profile } = await supabase.from("profiles").select("id").eq("id", target).maybeSingle();
+        if (!profile) return NextResponse.json({ error: "That person no longer exists." }, { status: 404 });
+        rowIdentity = { sender_id: user.id, recipient_id: target, anon_visitor_id: null };
+      }
     }
 
     // A reply may only quote a message from the same conversation.

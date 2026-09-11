@@ -14,6 +14,8 @@ import {
   HiOutlineXMark,
   HiOutlinePhone,
   HiOutlineVideoCamera,
+  HiOutlineEllipsisVertical,
+  HiOutlineChevronLeft,
 } from "react-icons/hi2";
 import { browserSupabase } from "@/lib/supabase-browser";
 import { primeRealtimeAuth, isDeadChannelStatus } from "@/lib/realtime";
@@ -32,6 +34,7 @@ import {
 import MessageAttachment, { type MessageAttachmentData } from "./MessageAttachment";
 import NotificationSetting from "./NotificationSetting";
 import CallPanel from "./CallPanel";
+import ConversationList, { type Person, type ThreadSummary } from "./ConversationList";
 import { useCall } from "@/hooks/useCall";
 
 const PRESENCE_POLL_MS = 60_000;
@@ -70,7 +73,6 @@ type Message = {
 
 type ReplyPreview = { id: number; excerpt: string; outgoing: boolean; deleted: boolean };
 
-type Contact = { id: string; kind: "user" | "anon"; email: string; username: string | null; label: string; lastSeenAt: string | null; ip?: string | null };
 type Owner = { id: string; label: string; lastSeenAt: string | null };
 type Pending = { file: File; kind: AttachmentKind; previewUrl: string | null; durationMs: number | null };
 type RetryPayload = { text: string; file: File | null; durationMs: number | null; replyToId: number | null };
@@ -94,6 +96,12 @@ function previewOf(original: Message, viewerSent: boolean): ReplyPreview {
         ? KIND_EXCERPT[original.attachment_kind]
         : "Message";
   return { id: original.id, excerpt, outgoing: viewerSent, deleted: Boolean(original.deleted_for_everyone_at) };
+}
+
+/** Mirrors the server's thread key so the client can group the same way. */
+function threadKeyOf(message: Message) {
+  if (message.anon_visitor_id) return `anon:${message.anon_visitor_id}`;
+  return `pair:${[message.sender_id, message.recipient_id].filter(Boolean).sort().join("|")}`;
 }
 
 /** Realtime rows arrive as raw columns; rebuild the attachment shape the UI uses. */
@@ -126,15 +134,22 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   const [messages, setMessages] = useState<Message[]>([]);
   const [admin, setAdmin] = useState(false);
   const [userId, setUserId] = useState("");
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [people, setPeople] = useState<Person[]>([]);
+  const [activeKey, setActiveKey] = useState("");
+  const [draftPeer, setDraftPeer] = useState<Person | null>(null);
   const [owner, setOwner] = useState<Owner | null>(null);
-  const [recipientId, setRecipientId] = useState("");
+
   const [peerLastSeen, setPeerLastSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
+  const [threadMenu, setThreadMenu] = useState(false);
+  // Narrow screens show either the list or the thread, never both.
+  const [mobilePane, setMobilePane] = useState<"list" | "thread">("list");
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [anonymous, setAnonymous] = useState(false);
   const [visitorLabel, setVisitorLabel] = useState("");
@@ -148,9 +163,19 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
   const recorder = useAudioRecorder();
 
-  const peerId = admin ? recipientId : owner?.id || "";
-  const selectedContact = contacts.find((contact) => contact.id === recipientId);
-  const peerLabel = admin ? selectedContact?.label || "guest" : owner?.label || "Sandeep Gowda";
+  const activeThread = threads.find((thread) => thread.key === activeKey) || null;
+
+  // A draft is a chosen person with no messages yet; it behaves like a thread.
+  /*
+   * An anonymous visitor only ever has one conversation - with the owner - and
+   * it does not exist until their first message, so they must be able to write
+   * before any thread is on record.
+   */
+  const peerId = anonymous ? owner?.id || "" : draftPeer?.id || activeThread?.peerId || "";
+  const recipientId = anonymous ? "" : peerId;
+  const canWrite = anonymous ? true : Boolean(draftPeer) || (activeThread ? activeThread.participant : false);
+  const peerLabel =
+    draftPeer?.label || activeThread?.title || (anonymous ? owner?.label || "Sandeep Gowda" : "Select a chat");
 
   const { peerOnline, peerTyping, notifyTyping, stopTyping } = useConversationChannel(userId, peerId, token);
   const call = useCall(userId, peerId);
@@ -182,6 +207,16 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [menuFor]);
+
+  useEffect(() => {
+    if (!threadMenu) return;
+    const close = (event: PointerEvent) => {
+      if ((event.target as HTMLElement | null)?.closest?.(".dm-thread-menu")) return;
+      setThreadMenu(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [threadMenu]);
 
   // Suppress banners only while this thread is genuinely on screen. A minimized
   // window keeps this component mounted, and claiming focus from there would
@@ -284,7 +319,14 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     setMessages((payload.messages as Message[]).map(hydrate));
     setAdmin(payload.admin);
     setUserId(payload.userId);
-    setContacts(payload.contacts || []);
+    const nextThreads = (payload.threads || []) as ThreadSummary[];
+    setThreads(nextThreads);
+    setLabels(payload.labels || {});
+    // Keep the current chat selected across refreshes; otherwise open the newest.
+    setActiveKey((current) => {
+      if (current && nextThreads.some((thread) => thread.key === current)) return current;
+      return nextThreads[0]?.key || "";
+    });
     setOwner(payload.owner || null);
     setAnonymous(Boolean(payload.anonymous));
     setVisitorLabel(payload.visitorLabel || "");
@@ -306,6 +348,24 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     });
     return () => data.subscription.unsubscribe();
   }, [loadThread]);
+
+  // Everyone a signed-in visitor can start a chat with.
+  useEffect(() => {
+    if (anonymous || !token) return;
+    void (async () => {
+      try {
+        const response = await fetch("/api/users/directory", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        setPeople(payload.people || []);
+      } catch {
+        // Picker just stays empty.
+      }
+    })();
+  }, [anonymous, token]);
 
   // Realtime, with re-auth on token refresh and a rejoin if the channel dies.
   useEffect(() => {
@@ -412,11 +472,6 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     return () => clearInterval(timer);
   }, [token, messages, signAttachments]);
 
-  useEffect(() => {
-    if (!admin) return;
-    setPeerLastSeen(selectedContact?.lastSeenAt || null);
-  }, [admin, selectedContact]);
-
   // Poll the peer's last-seen so "last seen" stays honest without a page reload.
   useEffect(() => {
     if (!token || !peerId) return;
@@ -445,14 +500,11 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
   }, [token, peerId]);
 
   const visibleMessages = useMemo(() => {
-    if (!admin) return messages;
-    if (!recipientId) return [];
-    return messages.filter((message) =>
-      message.anon_visitor_id
-        ? message.anon_visitor_id === recipientId
-        : message.sender_id === recipientId || message.recipient_id === recipientId,
-    );
-  }, [admin, messages, recipientId]);
+    // An anonymous visitor is only ever served their own single thread.
+    if (anonymous) return messages;
+    if (!activeKey) return [];
+    return messages.filter((message) => threadKeyOf(message) === activeKey);
+  }, [messages, activeKey, anonymous]);
 
   const markRead = useCallback(async () => {
     if ((!token && !anonymous) || !peerId || !isVisible || document.visibilityState !== "visible") return;
@@ -567,6 +619,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         }
 
         const saved = hydrate(data.message as Message);
+        setDraftPeer(null);
+        setActiveKey(threadKeyOf(saved));
         retryPayloads.current.delete(optimisticId);
         setMessages((current) => {
           /*
@@ -594,8 +648,8 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
 
   function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (admin && !recipientId) {
-      setError("Choose a guest to message first.");
+    if (!canWrite) {
+      setError(activeThread && !activeThread.participant ? "This is not your conversation." : "Choose someone to message first.");
       return;
     }
 
@@ -693,6 +747,33 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     }
   }
 
+  async function removeConversation(scope: "me" | "everyone") {
+    if (!activeKey) return;
+    const label = scope === "everyone" ? "for everyone" : "for you";
+    if (!window.confirm(`Delete this conversation ${label}? This cannot be undone.`)) return;
+
+    setError("");
+    try {
+      const accessToken = await currentToken();
+      const response = await fetch("/api/messages/conversation", {
+        method: "DELETE",
+        headers: accessToken
+          ? { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }
+          : { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadKey: activeKey, scope }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Could not delete the conversation.");
+        return;
+      }
+      await loadThread();
+      if (scope === "me") setActiveKey("");
+    } catch {
+      setError("Could not delete the conversation.");
+    }
+  }
+
   function jumpTo(messageId: number) {
     const node = document.getElementById(`dm-${messageId}`);
     if (!node) return;
@@ -713,14 +794,55 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
     setMessages((current) => current.filter((item) => item.id !== optimisticId));
   }
 
-  const blocked = admin && !recipientId;
+  const blocked = !canWrite;
+  const spectating = Boolean(activeThread && !activeThread.participant);
   const active = peerOnline || isRecentlyActive(peerLastSeen);
   const lastSeenLabel = relativeTime(peerLastSeen);
   const recording = recorder.state === "recording" || recorder.state === "requesting";
 
   return (
-    <section className="surface messages-panel px-6 py-6 sm:px-8">
+    <section
+      className={`surface messages-panel px-6 py-6 sm:px-8${anonymous ? "" : " has-sidebar"} pane-${mobilePane}`}
+    >
+      {!anonymous && (
+        <ConversationList
+          threads={threads}
+          people={people}
+          activeKey={activeKey}
+          onSelect={(thread) => {
+            setDraftPeer(null);
+            setActiveKey(thread.key);
+            setThreadMenu(false);
+            setMobilePane("thread");
+          }}
+          onStartWith={(person) => {
+            const key = `pair:${[userId, person.id].sort().join("|")}`;
+            const existing = threads.find((thread) => thread.key === key);
+            if (existing) {
+              setDraftPeer(null);
+              setActiveKey(existing.key);
+            } else {
+              setDraftPeer(person);
+              setActiveKey(key);
+            }
+            setMobilePane("thread");
+          }}
+          onlineIds={new Set(peerOnline && peerId ? [peerId] : [])}
+        />
+      )}
+
+      <div className="dm-thread">
       <div className="section-heading dm-header">
+        {!anonymous && (
+          <button
+            type="button"
+            className="dm-back"
+            aria-label="Back to chats"
+            onClick={() => setMobilePane("list")}
+          >
+            <HiOutlineChevronLeft className="h-5 w-5" />
+          </button>
+        )}
         <div className="dm-header-main">
           <h2>{admin ? "Admin inbox" : "Message Sandeep"}</h2>
           {blocked ? (
@@ -729,7 +851,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
             <p className="dm-presence">
               <span className={active ? "dm-dot online" : "dm-dot"} />
               <strong>{peerLabel}</strong>
-              {selectedContact?.kind === "anon" && <span className="dm-anon-tag">anonymous</span>}
+              {activeThread?.kind === "anon" && <span className="dm-anon-tag">anonymous</span>}
               {peerTyping ? (
                 <span className="dm-typing-label">typing…</span>
               ) : active ? (
@@ -773,20 +895,42 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
             </a>
           )}
           {!anonymous && <NotificationSetting />}
+
+          {activeKey && (
+            <div className="dm-thread-menu">
+              <button
+                type="button"
+                className="dm-thread-btn"
+                aria-label="Conversation options"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setThreadMenu((open) => !open);
+                }}
+              >
+                <HiOutlineEllipsisVertical className="h-4 w-4" />
+              </button>
+              {threadMenu && (
+                <div className="dm-menu-list" onClick={(event) => event.stopPropagation()}>
+                  <button type="button" onClick={() => { setThreadMenu(false); void removeConversation("me"); }}>
+                    <HiOutlineTrash className="h-3.5 w-3.5" />
+                    Delete chat for me
+                  </button>
+                  {admin && (
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => { setThreadMenu(false); void removeConversation("everyone"); }}
+                    >
+                      <HiOutlineTrash className="h-3.5 w-3.5" />
+                      Delete for everyone
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
-
-      {admin && (
-        <select value={recipientId} onChange={(event) => setRecipientId(event.target.value)}>
-          <option value="">Choose a guest to message</option>
-          {contacts.map((contact) => (
-            <option value={contact.id} key={contact.id}>
-              {contact.kind === "anon" ? `👤 ${contact.label} · ${contact.ip || "unknown IP"}` : contact.label}
-              {contact.kind === "user" && contact.username ? ` · ${contact.email}` : ""}
-            </option>
-          ))}
-        </select>
-      )}
 
       <div className="dm-list">
         {blocked ? (
@@ -797,7 +941,7 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
           </p>
         ) : (
           visibleMessages.map((message) => {
-            const outgoing = !isIncoming(message);
+            const outgoing = spectating ? false : !isIncoming(message);
             const removed = Boolean(message.deleted_for_everyone_at);
             // Only a confirmed message can be deleted, and "for everyone" is
             // the sender's call (the owner can moderate anything).
@@ -855,6 +999,14 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
                       </div>
                     )}
                   </div>
+                )}
+
+                {spectating && (
+                  <span className="dm-sender">
+                    {message.sender_id
+                      ? labels[message.sender_id] || "Unknown"
+                      : labels[message.anon_visitor_id || ""] || "Anonymous"}
+                  </span>
                 )}
 
                 {message.reply_to && !removed && (
@@ -916,6 +1068,11 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
         <div ref={listEndRef} />
       </div>
 
+      {spectating ? (
+        <p className="dm-readonly">
+          You are viewing this conversation as the owner. Replying is disabled because you are not a participant.
+        </p>
+      ) : (
       <form className="dm-form" onSubmit={send}>
         <textarea
           ref={textareaRef}
@@ -1027,8 +1184,10 @@ export default function DirectMessages({ isVisible = true }: { isVisible?: boole
           </button>
         </div>
       </form>
+      )}
 
-      {error && <p className="feed-error">{error}</p>}
+        {error && <p className="feed-error">{error}</p>}
+      </div>
 
       <CallPanel call={call} peerLabel={peerLabel} />
     </section>

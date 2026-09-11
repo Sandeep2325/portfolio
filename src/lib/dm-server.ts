@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { DM_ATTACHMENT_BUCKET, SIGNED_URL_TTL_SECONDS, type AttachmentKind } from "@/lib/attachments";
+import { OWNER_DISPLAY_NAME as OWNER_LABEL } from "@/lib/auth-server";
 
 export type DirectMessageRow = {
   id: number;
@@ -21,6 +22,32 @@ export type DirectMessageRow = {
   deleted_for_everyone_at?: string | null;
   reply_to_id?: number | null;
   created_at: string;
+};
+
+/**
+ * Identity of a conversation. Anonymous threads are keyed by their visitor;
+ * everything else by the unordered pair of accounts, so both participants
+ * derive the same key.
+ */
+export function threadKeyOf(row: DirectMessageRow) {
+  if (row.anon_visitor_id) return `anon:${row.anon_visitor_id}`;
+  return `pair:${[row.sender_id, row.recipient_id].filter(Boolean).sort().join("|")}`;
+}
+
+export type ThreadSummary = {
+  key: string;
+  kind: "anon" | "pair";
+  /** Who the viewer is talking to, or the pairing when they are spectating. */
+  title: string;
+  subtitle: string | null;
+  /** The other party, when the viewer is in the thread. */
+  peerId: string | null;
+  /** False when the owner is looking at someone else's conversation. */
+  participant: boolean;
+  lastBody: string;
+  lastAt: string;
+  unread: number;
+  ip: string | null;
 };
 
 /** Compact snapshot of the message a reply is quoting. */
@@ -238,4 +265,96 @@ export async function resolveAnonContacts(): Promise<Contact[]> {
     lastSeenAt: (visitor.last_seen_at as string | null) || null,
     ip: (visitor.ip as string | null) || null,
   }));
+}
+
+/** id -> display label for every participant referenced by the given rows. */
+export async function participantLabels(rows: DirectMessageRow[]) {
+  const supabase = createServerSupabaseClient();
+  const userIds = new Set<string>();
+  const anonIds = new Set<string>();
+
+  for (const row of rows) {
+    if (row.anon_visitor_id) anonIds.add(row.anon_visitor_id);
+    if (row.sender_id) userIds.add(row.sender_id);
+    if (row.recipient_id) userIds.add(row.recipient_id);
+  }
+
+  const labels = new Map<string, string>();
+  const ips = new Map<string, string | null>();
+
+  if (userIds.size > 0) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, is_super_admin")
+      .in("id", [...userIds]);
+    for (const profile of data || []) {
+      // Usernames only. Emails are never sent to the client here.
+      const label = profile.is_super_admin
+        ? OWNER_LABEL
+        : (profile.username as string | null) || (profile.display_name as string | null) || "Guest";
+      labels.set(profile.id as string, label);
+    }
+  }
+
+  if (anonIds.size > 0) {
+    const { data } = await supabase.from("anon_visitors").select("id, label, ip").in("id", [...anonIds]);
+    for (const visitor of data || []) {
+      labels.set(visitor.id as string, visitor.label as string);
+      ips.set(visitor.id as string, (visitor.ip as string | null) || null);
+    }
+  }
+
+  return { labels, ips };
+}
+
+/** Groups messages into conversations for the sidebar. */
+export function buildThreads(
+  rows: DirectMessageRow[],
+  viewer: Viewer,
+  labels: Map<string, string>,
+  ips: Map<string, string | null>,
+): ThreadSummary[] {
+  const byKey = new Map<string, DirectMessageRow[]>();
+  for (const row of rows) {
+    const key = threadKeyOf(row);
+    byKey.set(key, [...(byKey.get(key) || []), row]);
+  }
+
+  const viewerId = viewer.userId || viewer.anonVisitorId;
+
+  return [...byKey.entries()]
+    .map(([key, group]) => {
+      const sorted = [...group].sort((left, right) => left.created_at.localeCompare(right.created_at));
+      const last = sorted[sorted.length - 1];
+      const anonId = last.anon_visitor_id || null;
+
+      const ids = anonId
+        ? [anonId, last.sender_id || last.recipient_id].filter((id): id is string => Boolean(id))
+        : [last.sender_id, last.recipient_id].filter((id): id is string => Boolean(id));
+
+      const participant = Boolean(viewerId && ids.includes(viewerId));
+      const peerId = participant ? ids.find((id) => id !== viewerId) || null : null;
+
+      const title = participant
+        ? labels.get(peerId || "") || "Unknown"
+        : ids.map((id) => labels.get(id) || "Unknown").join(" ↔ ");
+
+      const unread = sorted.filter(
+        (row) => !row.read_at && !row.deleted_for_everyone_at && viewerId && !viewerIsSender(row, viewer),
+      ).length;
+
+      return {
+        key,
+        kind: anonId ? ("anon" as const) : ("pair" as const),
+        title,
+        subtitle: participant ? null : "not your conversation",
+        peerId,
+        participant,
+        lastBody: last.deleted_for_everyone_at ? "Message deleted" : (last.body || "").trim() || "Attachment",
+        lastAt: last.created_at,
+        unread: participant ? unread : 0,
+        ip: anonId ? ips.get(anonId) || null : null,
+      };
+    })
+    .sort((left, right) => right.lastAt.localeCompare(left.lastAt));
 }

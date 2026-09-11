@@ -41,7 +41,7 @@ export const APP_CONFIGS: AppConfig[] = [
   { id: "skills", name: "Skills.app", icon: HiOutlineBolt, shortcut: "4", route: "/skills", defaultSize: { width: 600, height: 480 } },
   { id: "things", name: "Things.app", icon: HiOutlineNewspaper, shortcut: "5", route: "/things", defaultSize: { width: 720, height: 620 } },
   { id: "community", name: "Community.app", icon: HiOutlineChatBubbleLeftRight, shortcut: "6", route: "/community", defaultSize: { width: 700, height: 620 } },
-  { id: "messages", name: "Messages.app", icon: HiOutlineInboxArrowDown, shortcut: "7", route: "/messages", defaultSize: { width: 640, height: 680 } },
+  { id: "messages", name: "Messages.app", icon: HiOutlineInboxArrowDown, shortcut: "7", route: "/messages", defaultSize: { width: 940, height: 700 } },
   { id: "contact", name: "Contact.app", icon: HiOutlineEnvelope, shortcut: "8", route: "/contact", defaultSize: { width: 560, height: 580 } },
   { id: "analytics", name: "Visitors.app", icon: HiOutlineChartBar, shortcut: "9", route: "/visitors", defaultSize: { width: 780, height: 640 }, adminOnly: true },
 ];

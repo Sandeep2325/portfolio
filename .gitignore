@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 reference-portfolio/
+
+# Expo app
+mobile/node_modules
+mobile/.expo
+mobile/dist
+mobile/.env.local
